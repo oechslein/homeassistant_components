@@ -1,11 +1,19 @@
 # Changelog
 
+## 1.0.7 - 2025-12-20
+
+- Add type annotations across core modules to improve static checks and developer DX.
+- Consolidate glob listener helpers into `glob_helpers.py` and remove duplicate implementations from `sensor.py`.
+- Fix README markdown fences to ensure example YAML renders correctly.
+- Minor refactors and cleanup: export `PLATFORM_SCHEMA` from `sensor.py`, improve utility meter creation flow, and add a mypy ignore for `config_flow` domain kwarg false-positive.
+
 ## 1.0.6 - 2025-12-20
 
 - Add full per-proxy utility meter support: `create_utility_meters`, `utility_meter_types`, `utility_name_template`, and `utility_unique_id_template` can now be set per sensor_proxy entry in YAML.
 - Update schema to accept all documented per-proxy options.
 - Utility meters are now created per-proxy as soon as the proxy is added, using per-proxy or global options as appropriate.
 - Documentation and metadata updated for full compliance with repository instructions.
+- Fix runtime bugs: per-proxy utility meters are now added via the entity platform (no more AttributeErrors or placeholder entity IDs) and glob listeners are cleaned up when Home Assistant shuts down.
 
 ## 1.0.5 - 2025-12-20
 

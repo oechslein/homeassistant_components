@@ -5,12 +5,12 @@ from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from .const import DOMAIN
 
 
-class SensorProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class SensorProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Sensor Proxy."""
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(self, user_input: dict | None = None):
         if user_input is not None:
             unique_id = user_input.get(CONF_UNIQUE_ID)
             if unique_id:

@@ -2,5 +2,6 @@
   "name": "Sensor Proxy",
   "content_in_root": false,
   "domains": ["sensor_proxy"],
-  "type": "integration"
+  "type": "integration",
+  "version": "1.0.7"
 }
