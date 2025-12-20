@@ -35,11 +35,12 @@ sensor:
     exclude_patterns:
       - "*_energy_daily"
 
-## Utility meters (optional)
 
-You can opt-in to automatic creation of utility meters for energy sensors. This is disabled by default.
+## Utility meters (optional, per-proxy support)
 
-Global configuration (in `configuration.yaml`):
+You can opt-in to automatic creation of utility meters for energy sensors. This is disabled by default. As of v1.0.6, all utility meter options can be set globally or per-proxy (YAML) entry.
+
+**Global configuration (in `configuration.yaml`):**
 
 ```yaml
 sensor_proxy:
@@ -51,7 +52,7 @@ sensor_proxy:
     - yearly
 ```
 
-Per-proxy (YAML) options:
+**Per-proxy (YAML) options:**
 
 ```yaml
 sensor:
@@ -86,7 +87,7 @@ sensor:
     utility_unique_id_template: "proxy_*_{cycle}"
 ```
 
-Behavior notes:
+**Behavior notes:**
 
 - Utility meters are only created when the source sensor qualifies as an energy accumulator: it must have `state_class: total_increasing` AND `device_class: energy`.
 - Utility meters are created for the generated *proxy* sensor (not the original source), with deterministic unique IDs derived from the proxy unique ID and the cycle (e.g. `_daily`).

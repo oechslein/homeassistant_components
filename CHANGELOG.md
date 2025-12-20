@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.6 - 2025-12-20
+
+- Add full per-proxy utility meter support: `create_utility_meters`, `utility_meter_types`, `utility_name_template`, and `utility_unique_id_template` can now be set per sensor_proxy entry in YAML.
+- Update schema to accept all documented per-proxy options.
+- Utility meters are now created per-proxy as soon as the proxy is added, using per-proxy or global options as appropriate.
+- Documentation and metadata updated for full compliance with repository instructions.
+
 ## 1.0.5 - 2025-12-20
 
 - Add `source_entity_glob` with `name_template`/`unique_id_template` and `include_patterns`/`exclude_patterns` for fine-grained matching.
