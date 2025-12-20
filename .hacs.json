@@ -3,5 +3,5 @@
   "content_in_root": false,
   "domains": ["sensor_proxy"],
   "type": "integration",
-  "version": "1.0.7"
+  "version": "1.0.8"
 }

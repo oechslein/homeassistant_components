@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8 - 2025-12-20
+
+- Fix: use the entity registry object API (`registry.async_get_entity_id(...)`) in `sensor.py` to avoid AttributeError when handling state_changed events from glob listeners.
+- Maintenance: small type hinting and API cleanup across core modules.
+
 ## 1.0.7 - 2025-12-20
 
 - Add type annotations across core modules to improve static checks and developer DX.

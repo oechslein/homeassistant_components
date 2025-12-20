@@ -104,8 +104,9 @@ async def async_setup_platform(
 
             unique_id = render_template(unique_template, state.entity_id)
             # Skip if registry already has this unique_id
-            existing_eid = er.async_get_entity_id(
-                hass, "sensor", "sensor_proxy", unique_id
+            registry = er.async_get(hass)
+            existing_eid = registry.async_get_entity_id(
+                domain="sensor", platform="sensor_proxy", unique_id=unique_id
             )
             if existing_eid:
                 _LOGGER.debug("Skipping existing proxy for unique_id %s", unique_id)
@@ -145,8 +146,9 @@ async def async_setup_platform(
             unique_id = render_template(unique_template, entity_id)
             if unique_id in created_unique_ids:
                 return
-            existing_eid = er.async_get_entity_id(
-                hass, "sensor", "sensor_proxy", unique_id
+            registry = er.async_get(hass)
+            existing_eid = registry.async_get_entity_id(
+                domain="sensor", platform="sensor_proxy", unique_id=unique_id
             )
             if existing_eid:
                 created_unique_ids.add(unique_id)
