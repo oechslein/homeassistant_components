@@ -5,9 +5,12 @@ from __future__ import annotations
 import fnmatch
 from collections.abc import Iterable
 from typing import Any
+import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
+
+_LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "build_glob_listener_key",
@@ -114,9 +117,6 @@ def build_glob_listener_key(
     )
 
 
-import logging
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def schedule_glob_listener_cleanup(hass: HomeAssistant, domain_data: dict) -> None:
