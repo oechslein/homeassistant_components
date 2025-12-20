@@ -1,0 +1,9 @@
+{
+  "domain": "sensor_proxy",
+  "name": "Sensor Proxy",
+  "version": "1.0.0",
+  "documentation": "https://github.com/oechslein/homeassistant_components",
+  "issue_tracker": "https://github.com/oechslein/homeassistant_components/issues",
+  "codeowners": ["@oechslein"],
+  "requirements": []
+}
