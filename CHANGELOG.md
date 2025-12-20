@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.9 - 2025-12-20
+
+- Fix: ensure `VirtualUtilityMeter` clears `device_class` to avoid incompatible `state_class`/`device_class` warnings when creating utility meters for non-energy source sensors.
+- Fix: utility meter naming defaults now use the resolved proxy object id to avoid duplicated prefixes for glob-created proxies (e.g., avoid `copy2_copy2_...`).
+- Add debug logs for lifecycle events (proxy creation/removal, utility meter build/creation/removal, glob listener cleanup) to aid troubleshooting.
+
 ## 1.0.8 - 2025-12-20
 
 - Fix: use the entity registry object API (`registry.async_get_entity_id(...)`) in `sensor.py` to avoid AttributeError when handling state_changed events from glob listeners.

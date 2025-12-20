@@ -6,6 +6,7 @@ from typing import Any, Tuple
 
 from homeassistant.components.utility_meter import DEFAULT_OFFSET
 from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
+import logging
 from homeassistant.helpers.entity import async_generate_entity_id
 
 __all__ = [
@@ -13,6 +14,8 @@ __all__ = [
     "UTILITY_METER_ALLOWED_KWARGS",
     "build_virtual_meter_entity",
 ]
+
+_LOGGER = logging.getLogger(__name__)
 
 UTILITY_METER_ALLOWED_KWARGS = {
     "hass",
@@ -41,6 +44,10 @@ class VirtualUtilityMeter(UtilityMeterSensor):
             if key in UTILITY_METER_ALLOWED_KWARGS
         }
         super().__init__(**allowed_kwargs)
+        # Ensure the utility meter does not inherit a mismatched device_class from its source.
+        # Utility meters are totalizing sensors; to avoid home assistant warnings about
+        # incompatible device_class/state_class combinations, explicitly clear device_class.
+        self._attr_device_class = None
         self._attr_unique_id = kwargs.get("unique_id")
 
     @property
@@ -81,4 +88,15 @@ def build_virtual_meter_entity(
     }
     utility_meter = VirtualUtilityMeter(**params)
     utility_meter.entity_id = meter_entity_id
+
+    # Debug output for created virtual meter
+    _LOGGER.debug(
+        "Built virtual utility meter: name=%s entity_id=%s unique_id=%s meter_type=%s parent=%s",
+        params.get("name"),
+        meter_entity_id,
+        params.get("unique_id"),
+        meter_type,
+        parent_entity_id,
+    )
+
     return utility_meter, meter_entity_id

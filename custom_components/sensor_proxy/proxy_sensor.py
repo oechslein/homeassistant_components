@@ -73,10 +73,32 @@ class SensorProxySensor(SensorEntity):
         self._unsub = async_track_state_change_event(
             self.hass, self._source_entity_id, self._async_source_changed_event
         )
+
+        # Informative debug: the proxy entity is now present in hass and listening
+        _LOGGER.debug(
+            "Proxy sensor created: name=%s unique_id=%s source=%s device_id=%s device_class=%s state_class=%s available=%s",
+            self.name,
+            self.unique_id,
+            self._source_entity_id,
+            self._device_id,
+            self._attr_device_class,
+            self._attr_state_class,
+            self.available,
+        )
+
         if self._create_utility_meters:
             await self._async_create_utility_meters()
 
     async def async_will_remove_from_hass(self) -> None:
+        # Debug: proxy is being removed from hass
+        _LOGGER.debug(
+            "Removing proxy sensor: name=%s unique_id=%s entity_id=%s source=%s",
+            self.name,
+            self.unique_id,
+            self.entity_id,
+            self._source_entity_id,
+        )
+
         if self._unsub:
             self._unsub()
             self._unsub = None
@@ -137,19 +159,10 @@ class SensorProxySensor(SensorEntity):
             DOMAIN_CONST, {}
         ).get(CONF_UTILITY_METER_TYPES, DEFAULT_UTILITY_METER_TYPES)
 
-        name_template = self._utility_name_template or f"{self._attr_name}_{{cycle}}"
-        unique_id_template = (
-            self._utility_unique_id_template or f"{self._attr_unique_id}_{{cycle}}"
-        )
-
+        # Defer default name generation until we have the proxy object id to avoid
+        # duplicating prefixes for glob-created proxies (e.g. avoid 'copy2_copy2_xxx').
         source_state = self._hass.states.get(self._source_entity_id)
         if not source_state:
-            return
-        attrs = source_state.attributes
-        if (
-            attrs.get("state_class") != "total_increasing"
-            or attrs.get("device_class") != "energy"
-        ):
             return
 
         entity_registry = er.async_get(self._hass)
@@ -160,6 +173,21 @@ class SensorProxySensor(SensorEntity):
             if self.entity_id
             else slugify(self._attr_unique_id or self._attr_name or "sensor_proxy")
         )
+
+        # Choose defaults based on the resolved object id to avoid duplicated prefixes
+        name_template = self._utility_name_template or f"{base_object_id}_{{cycle}}"
+        unique_id_template = self._utility_unique_id_template or (
+            f"{self._attr_unique_id}_{{cycle}}"
+            if self._attr_unique_id
+            else f"{base_object_id}_{{cycle}}"
+        )
+
+        attrs = source_state.attributes
+        if (
+            attrs.get("state_class") != "total_increasing"
+            or attrs.get("device_class") != "energy"
+        ):
+            return
 
         meters_to_add = []
         for meter_type in meter_types:
@@ -196,6 +224,21 @@ class SensorProxySensor(SensorEntity):
         if meters_to_add:
             await platform.async_add_entities(meters_to_add)
 
+            # Debug: list created meters with key details
+            _LOGGER.debug(
+                "Created %d utility meter(s) for %s: %s",
+                len(meters_to_add),
+                self.entity_id,
+                [
+                    {
+                        "entity_id": m.entity_id,
+                        "unique_id": getattr(m, "unique_id", None),
+                        "meter_type": getattr(m, "meter_type", None),
+                    }
+                    for m in meters_to_add
+                ],
+            )
+
     async def _async_cleanup_created_meters(self) -> None:
         if not self._created_meter_entities:
             return
@@ -204,13 +247,24 @@ class SensorProxySensor(SensorEntity):
         created = hass_data.get("created_utility_meters", {})
         platform = self.platform
         for entity_id, unique_id in list(self._created_meter_entities):
+            _LOGGER.debug(
+                "Cleaning up created utility meter: entity_id=%s unique_id=%s parent=%s",
+                entity_id,
+                unique_id,
+                self.entity_id,
+            )
             if platform:
                 try:
                     await platform.async_remove_entity(entity_id)
+                    _LOGGER.debug("Platform removed utility meter: %s", entity_id)
                 except ValueError:
-                    pass
+                    _LOGGER.debug(
+                        "Platform reported ValueError removing utility meter (may already be gone): %s",
+                        entity_id,
+                    )
             if entity_registry.async_get(entity_id):
                 entity_registry.async_remove(entity_id)
+                _LOGGER.debug("Entity registry removed utility meter: %s", entity_id)
             if unique_id and unique_id in created:
                 created.pop(unique_id)
         self._created_meter_entities.clear()
@@ -238,9 +292,15 @@ class SensorProxySensor(SensorEntity):
             return
         entry = store[self._glob_listener_key]
         entry["refcount"] = max(0, entry.get("refcount", 1) - 1)
+        _LOGGER.debug(
+            "Released glob listener: key=%s new_refcount=%d",
+            self._glob_listener_key,
+            entry.get("refcount", 0),
+        )
         if entry["refcount"] > 0:
             self._glob_listener_attached = False
             return
+        _LOGGER.debug("Removing glob listener key: %s", self._glob_listener_key)
         store.pop(self._glob_listener_key, None)
         active_keys = domain.get("glob_listener_active_keys")
         if active_keys and self._glob_listener_key in active_keys:
@@ -250,5 +310,6 @@ class SensorProxySensor(SensorEntity):
             bus_list = domain.get("bus_listeners", [])
             if unsub in bus_list:
                 bus_list.remove(unsub)
+            _LOGGER.debug("Unsubscribing glob listener callback for key: %s", self._glob_listener_key)
             unsub()
         self._glob_listener_attached = False

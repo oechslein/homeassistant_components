@@ -65,6 +65,11 @@ def build_glob_listener_key(
     )
 
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
+
 def schedule_glob_listener_cleanup(hass: HomeAssistant, domain_data: dict) -> None:
     """Schedule removal of unused glob listeners."""
     if domain_data.get("glob_listener_cleanup_handle"):
@@ -79,10 +84,12 @@ def schedule_glob_listener_cleanup(hass: HomeAssistant, domain_data: dict) -> No
                 continue
             if entry.get("refcount", 0) > 0:
                 continue
+            _LOGGER.debug("Cleaning up glob listener key: %s", key)
             unsub = entry.get("unsubscribe")
             if unsub:
                 if unsub in bus_listeners:
                     bus_listeners.remove(unsub)
+                _LOGGER.debug("Unsubscribing glob listener for key: %s", key)
                 unsub()
             store.pop(key, None)
         active_keys.clear()
