@@ -32,18 +32,19 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     new_unique_id = config[CONF_UNIQUE_ID]
     device_id = config.get("device_id")
 
-    # Verify source exists in states
-    source_state = hass.states.get(source_entity_id)
-    if source_state is None:
-        _LOGGER.error("Source entity %s not found", source_entity_id)
-        return
-
+    # Create proxy entity even if the source doesn't exist yet. The sensor
+    # will listen for state changes on the source and update when it appears.
     entities = [
         SensorProxySensor(
             hass, config[CONF_NAME], source_entity_id, new_unique_id, device_id
         )
     ]
     async_add_entities(entities)
+    _LOGGER.debug(
+        "Created Sensor Proxy for %s (unique_id=%s); will wait for source to appear",
+        source_entity_id,
+        new_unique_id,
+    )
 
 
 class SensorProxySensor(SensorEntity):
