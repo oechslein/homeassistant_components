@@ -156,25 +156,39 @@ async def async_setup_platform(
 
         # subscribe to future state changes to create proxies lazily
         @callback
-        def _on_state_changed(event):
+        def _on_state_changed(
+            event,
+            source_glob=source_glob,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            name_template=name_template,
+            unique_template=unique_template,
+            listener_key=listener_key,
+            created_unique_ids=created_unique_ids,
+            device_id=device_id,
+            utility_options=utility_options,
+        ):
             data = event.data
             entity_id = data.get("entity_id")
             if not entity_id:
                 return
             new_state = data.get("new_state")
-            # Only create proxies when the source has a valid state
+            # Debug: show event context and which listener is handling it
+            _LOGGER.debug(
+                "Glob listener event: listener_key=%s event_entity=%s new_state=%s",
+                listener_key,
+                entity_id,
+                None if new_state is None else new_state.state,
+            )
+            # First ensure this event is for a matching source; ignore unrelated entity events
+            if not fnmatch.fnmatchcase(entity_id, source_glob):
+                return
+            # Only create proxies when the source has a valid state (available)
             if new_state is None or new_state.state in ("unavailable", "unknown"):
                 _LOGGER.debug(
-                    "Glob callback skip (new state not available): entity_id=%s state=%s",
+                    "Glob callback skip (source state not available): source=%s state=%s",
                     entity_id,
                     None if new_state is None else new_state.state,
-                )
-                return
-            if not fnmatch.fnmatchcase(entity_id, source_glob):
-                _LOGGER.debug(
-                    "Glob callback skip (no glob match): entity_id=%s source_glob=%s",
-                    entity_id,
-                    source_glob,
                 )
                 return
             object_id = entity_id.split(".", 1)[1]
