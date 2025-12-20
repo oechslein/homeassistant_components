@@ -1,0 +1,1 @@
+DOMAIN = "sensor_proxy"

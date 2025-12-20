@@ -47,6 +47,23 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     )
 
 
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up a sensor proxy from a config entry (UI).
+
+    This keeps YAML and UI setup working side-by-side.
+    """
+    data = entry.data
+    source_entity_id = data["source_entity_id"]
+    name = data["name"]
+    unique_id = data.get(CONF_UNIQUE_ID, entry.entry_id)
+    device_id = data.get("device_id")
+
+    entities = [
+        SensorProxySensor(hass, name, source_entity_id, unique_id, device_id)
+    ]
+    async_add_entities(entities)
+
+
 class SensorProxySensor(SensorEntity):
     def __init__(self, hass, name, source_entity_id, unique_id, device_id=None):
         self._hass = hass
@@ -90,7 +107,22 @@ class SensorProxySensor(SensorEntity):
 
     def _copy_source_attributes(self, source_state):
         """Copy attributes and state from source state object."""
-        # state
+        # If the source is gone or reports unavailable/unknown, mark this
+        # proxy as unavailable and don't set a non-numeric state that would
+        # break sensors with numeric device/state classes.
+        if source_state is None or source_state.state in ("unavailable", "unknown"):
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = None
+            self._attr_native_unit_of_measurement = None
+            self._attr_device_class = None
+            self._attr_state_class = None
+            self._attr_icon = None
+            # Mark unavailable explicitly
+            self._attr_available = False
+            return
+
+        # Source has a valid state — copy it and mark available.
+        self._attr_available = True
         self._attr_native_value = source_state.state
         # attributes (make a shallow copy)
         self._attr_extra_state_attributes = source_state.attributes.copy()
