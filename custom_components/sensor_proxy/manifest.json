@@ -5,5 +5,7 @@
   "documentation": "https://github.com/oechslein/homeassistant_components",
   "issue_tracker": "https://github.com/oechslein/homeassistant_components/issues",
   "codeowners": ["@oechslein"],
-  "requirements": []
+  "requirements": [],
+  "homeassistant": "2021.6.0",
+  "iot_class": "local_polling"
 }
