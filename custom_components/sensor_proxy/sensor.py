@@ -114,20 +114,25 @@ async def async_setup_platform(
                 continue
 
             name = render_template(name_template, state.entity_id)
-            entities.append(
-                SensorProxySensor(
-                    hass,
-                    name,
-                    state.entity_id,
-                    unique_id,
-                    device_id,
-                    create_utility_meters=utility_options.create,
-                    utility_meter_types=list(utility_options.meter_types),
-                    utility_name_template=utility_options.name_template,
-                    utility_unique_id_template=utility_options.unique_id_template,
-                    glob_listener_key=listener_key,
-                )
+            entity = SensorProxySensor(
+                hass,
+                name,
+                state.entity_id,
+                unique_id,
+                device_id,
+                create_utility_meters=utility_options.create,
+                utility_meter_types=list(utility_options.meter_types),
+                utility_name_template=utility_options.name_template,
+                utility_unique_id_template=utility_options.unique_id_template,
+                glob_listener_key=listener_key,
             )
+            _LOGGER.debug(
+                "Scheduling creation of proxy (initial scan): source=%s name=%s unique_id=%s",
+                state.entity_id,
+                name,
+                unique_id,
+            )
+            entities.append(entity)
             created_unique_ids.add(unique_id)
 
         # subscribe to future state changes to create proxies lazily
@@ -154,21 +159,25 @@ async def async_setup_platform(
                 created_unique_ids.add(unique_id)
                 return
             name = render_template(name_template, entity_id)
-            entities_to_add = [
-                SensorProxySensor(
-                    hass,
-                    name,
-                    entity_id,
-                    unique_id,
-                    device_id,
-                    create_utility_meters=utility_options.create,
-                    utility_meter_types=list(utility_options.meter_types),
-                    utility_name_template=utility_options.name_template,
-                    utility_unique_id_template=utility_options.unique_id_template,
-                    glob_listener_key=listener_key,
-                )
-            ]
-            async_add_entities(entities_to_add)
+            entity = SensorProxySensor(
+                hass,
+                name,
+                entity_id,
+                unique_id,
+                device_id,
+                create_utility_meters=utility_options.create,
+                utility_meter_types=list(utility_options.meter_types),
+                utility_name_template=utility_options.name_template,
+                utility_unique_id_template=utility_options.unique_id_template,
+                glob_listener_key=listener_key,
+            )
+            _LOGGER.debug(
+                "Creating proxy (event): source=%s name=%s unique_id=%s",
+                entity_id,
+                name,
+                unique_id,
+            )
+            async_add_entities([entity])
             created_unique_ids.add(unique_id)
 
         unsubscribe = hass.bus.async_listen(EVENT_STATE_CHANGED, _on_state_changed)

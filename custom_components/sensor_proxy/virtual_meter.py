@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Tuple
 
 from homeassistant.components.utility_meter import DEFAULT_OFFSET
 from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
-import logging
 from homeassistant.helpers.entity import async_generate_entity_id
 
 __all__ = [

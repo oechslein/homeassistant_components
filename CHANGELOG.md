@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.10 - 2025-12-20
+
+- Add: more verbose debug logs for proxy lifecycle and utility meter lifecycle events to assist troubleshooting (creation, removal, and cleanup).
+
 ## 1.0.9 - 2025-12-20
 
 - Fix: ensure `VirtualUtilityMeter` clears `device_class` to avoid incompatible `state_class`/`device_class` warnings when creating utility meters for non-energy source sensors.

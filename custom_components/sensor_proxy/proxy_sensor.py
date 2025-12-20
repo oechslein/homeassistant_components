@@ -50,6 +50,17 @@ class SensorProxySensor(SensorEntity):
         self._created_meter_entities: list[tuple[str, str | None]] = []
         self._glob_listener_key = glob_listener_key
         self._glob_listener_attached = False
+
+        # Default HA entity attributes; ensure they exist even if the source
+        # entity is missing at initialization to avoid AttributeError on access.
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = None
+        self._attr_native_unit_of_measurement = None
+        self._attr_device_class = None
+        self._attr_state_class = None
+        self._attr_icon = None
+        self._attr_available = False
+
         source_state = hass.states.get(self._source_entity_id)
         if source_state:
             self._copy_source_attributes(source_state)
@@ -310,6 +321,9 @@ class SensorProxySensor(SensorEntity):
             bus_list = domain.get("bus_listeners", [])
             if unsub in bus_list:
                 bus_list.remove(unsub)
-            _LOGGER.debug("Unsubscribing glob listener callback for key: %s", self._glob_listener_key)
+            _LOGGER.debug(
+                "Unsubscribing glob listener callback for key: %s",
+                self._glob_listener_key,
+            )
             unsub()
         self._glob_listener_attached = False
