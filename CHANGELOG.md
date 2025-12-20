@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.12 - 2025-12-21
+
+- Test: add unit tests for `matches_patterns` in `glob_helpers.py`.
+
 ## 1.0.11 - 2025-12-21
 
 - Release: publish a clean v1.0.11 replacing v1.0.10 to ensure HACS compatibility and include minor packaging/release metadata fixes.
