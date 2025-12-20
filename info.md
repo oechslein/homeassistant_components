@@ -1,10 +1,10 @@
+# Sensor Proxy
 
-**`info.md`** (HACS metadata):
+**Minimal YAML sensor proxy with full attribute inheritance.**
 
-```markdown
-Home Assistant custom component to proxy/copy sensors with minimal YAML config.
+## Features
 
-**Supports:**
-- State + attributes inheritance
-- Device binding
-- Energy dashboard compatibility
+- Copies state + attributes from source sensor
+- Inherits unit/device_class/state_class/icon  
+- Optional device binding
+- HACS ready
