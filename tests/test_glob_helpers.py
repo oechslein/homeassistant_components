@@ -1,5 +1,3 @@
-import pytest
-
 from custom_components.sensor_proxy.glob_helpers import matches_patterns
 
 
@@ -25,3 +23,14 @@ def test_include_and_exclude():
     exclude = ["*_energy_daily"]
     assert not matches_patterns("refoss_3_energy_daily", include, exclude)
     assert matches_patterns("refoss_3_power", include, exclude)
+
+
+def test_include_as_string():
+    assert matches_patterns("refoss_3_power", "*_power", None)
+    assert not matches_patterns("refoss_3_power", "*_energy", None)
+
+
+def test_invalid_patterns_are_safe():
+    # Passing a non-iterable for patterns should not raise; treated as non-match
+    assert matches_patterns("refoss_3_power", None, None) is True
+    assert matches_patterns("refoss_3_power", 123, None) is False

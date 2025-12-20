@@ -96,10 +96,29 @@ async def async_setup_platform(
         glob_active_keys.add(listener_key)
 
         for state in hass.states.async_all():
-            if not fnmatch.fnmatch(state.entity_id, source_glob):
+            if not fnmatch.fnmatchcase(state.entity_id, source_glob):
+                _LOGGER.debug(
+                    "Glob skip (no glob match): entity_id=%s source_glob=%s",
+                    state.entity_id,
+                    source_glob,
+                )
+                continue
+            # Skip sources that are unavailable/unknown — create proxies only for available sources
+            if state.state in ("unavailable", "unknown"):
+                _LOGGER.debug(
+                    "Glob skip (source not available): entity_id=%s state=%s",
+                    state.entity_id,
+                    state.state,
+                )
                 continue
             object_id = state.entity_id.split(".", 1)[1]
             if not matches_patterns(object_id, include_patterns, exclude_patterns):
+                _LOGGER.debug(
+                    "Pattern skip (include/exclude): object_id=%s include=%s exclude=%s",
+                    object_id,
+                    include_patterns,
+                    exclude_patterns,
+                )
                 continue
 
             unique_id = render_template(unique_template, state.entity_id)
@@ -142,10 +161,30 @@ async def async_setup_platform(
             entity_id = data.get("entity_id")
             if not entity_id:
                 return
-            if not fnmatch.fnmatch(entity_id, source_glob):
+            new_state = data.get("new_state")
+            # Only create proxies when the source has a valid state
+            if new_state is None or new_state.state in ("unavailable", "unknown"):
+                _LOGGER.debug(
+                    "Glob callback skip (new state not available): entity_id=%s state=%s",
+                    entity_id,
+                    None if new_state is None else new_state.state,
+                )
+                return
+            if not fnmatch.fnmatchcase(entity_id, source_glob):
+                _LOGGER.debug(
+                    "Glob callback skip (no glob match): entity_id=%s source_glob=%s",
+                    entity_id,
+                    source_glob,
+                )
                 return
             object_id = entity_id.split(".", 1)[1]
             if not matches_patterns(object_id, include_patterns, exclude_patterns):
+                _LOGGER.debug(
+                    "Glob callback pattern skip (include/exclude): object_id=%s include=%s exclude=%s",
+                    object_id,
+                    include_patterns,
+                    exclude_patterns,
+                )
                 return
             # create proxy if not already created
             unique_id = render_template(unique_template, entity_id)
@@ -171,6 +210,24 @@ async def async_setup_platform(
                 utility_unique_id_template=utility_options.unique_id_template,
                 glob_listener_key=listener_key,
             )
+
+            # If the event included the new state, initialize the proxy from it
+            new_state = data.get("new_state")
+            if new_state is not None:
+                try:
+                    entity._copy_source_attributes(new_state)
+                    _LOGGER.debug(
+                        "Initialized proxy from event state: source=%s name=%s unique_id=%s state=%s",
+                        entity_id,
+                        name,
+                        unique_id,
+                        new_state.state,
+                    )
+                except Exception:  # Defensive: do not let a copy failure break creation
+                    _LOGGER.exception(
+                        "Failed to initialize proxy from event state for %s", entity_id
+                    )
+
             _LOGGER.debug(
                 "Creating proxy (event): source=%s name=%s unique_id=%s",
                 entity_id,

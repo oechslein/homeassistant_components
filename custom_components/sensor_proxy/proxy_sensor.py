@@ -118,6 +118,12 @@ class SensorProxySensor(SensorEntity):
 
     def _copy_source_attributes(self, source_state) -> None:
         if source_state is None or source_state.state in ("unavailable", "unknown"):
+            _LOGGER.debug(
+                "Source unavailable for proxy %s (source=%s): state=%s",
+                self.name,
+                self._source_entity_id,
+                None if source_state is None else source_state.state,
+            )
             self._attr_native_value = None
             self._attr_extra_state_attributes = None
             self._attr_native_unit_of_measurement = None
@@ -137,13 +143,43 @@ class SensorProxySensor(SensorEntity):
         self._attr_state_class = attrs.get("state_class")
         self._attr_icon = attrs.get("icon")
 
+        # Debug: show the copied attribute snapshot for visibility in logs
+        _LOGGER.debug(
+            "Proxy %s copied attributes from %s: state=%s device_class=%s state_class=%s unit=%s available=%s",
+            self.name,
+            self._source_entity_id,
+            self._attr_native_value,
+            self._attr_device_class,
+            self._attr_state_class,
+            self._attr_native_unit_of_measurement,
+            self._attr_available,
+        )
+
     @callback
     def _async_source_changed(self, entity_id, old_state, new_state) -> None:
+        _LOGGER.debug(
+            "Source state change for proxy %s: source=%s old=%s new=%s",
+            self.name,
+            entity_id,
+            None if old_state is None else old_state.state,
+            None if new_state is None else new_state.state,
+        )
+
         if new_state is None:
             self._attr_native_value = None
             self._attr_extra_state_attributes = None
         else:
             self._copy_source_attributes(new_state)
+
+        # Debug: report resulting availability and key attrs after handling
+        _LOGGER.debug(
+            "Proxy %s state after update: state=%s device_class=%s state_class=%s available=%s",
+            self.name,
+            self._attr_native_value,
+            self._attr_device_class,
+            self._attr_state_class,
+            self._attr_available,
+        )
 
         self.async_write_ha_state()
 

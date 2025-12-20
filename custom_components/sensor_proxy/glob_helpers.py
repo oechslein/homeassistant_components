@@ -30,12 +30,61 @@ def matches_patterns(
     include: Iterable[str] | None,
     exclude: Iterable[str] | None,
 ) -> bool:
-    """Return True if object_id matches the include/exclude patterns."""
-    if include and not any(fnmatch.fnmatch(object_id, pattern) for pattern in include):
+    """Return True if object_id matches the include/exclude patterns.
+
+    Adds debug logging to show which patterns matched or caused rejection.
+    Accepts a single pattern string as well as iterables.
+    """
+    _LOGGER.debug(
+        "matching object_id=%s include=%r exclude=%r",
+        object_id,
+        include,
+        exclude,
+    )
+
+    # Normalize single string patterns to lists
+    if isinstance(include, str):
+        include = [include]
+    if isinstance(exclude, str):
+        exclude = [exclude]
+
+    try:
+        if include:
+            matched_any = any(
+                fnmatch.fnmatchcase(object_id, pattern) for pattern in include
+            )
+            _LOGGER.debug(
+                "include matched=%s for object_id=%s (patterns=%r)",
+                matched_any,
+                object_id,
+                include,
+            )
+            if not matched_any:
+                return False
+
+        if exclude:
+            excluded = any(
+                fnmatch.fnmatchcase(object_id, pattern) for pattern in exclude
+            )
+            _LOGGER.debug(
+                "exclude matched=%s for object_id=%s (patterns=%r)",
+                excluded,
+                object_id,
+                exclude,
+            )
+            if excluded:
+                return False
+
+        return True
+    except Exception as exc:  # Defensive: log and treat as non-match
+        _LOGGER.exception(
+            "Error matching patterns for object_id=%s include=%r exclude=%r: %s",
+            object_id,
+            include,
+            exclude,
+            exc,
+        )
         return False
-    if exclude and any(fnmatch.fnmatch(object_id, pattern) for pattern in exclude):
-        return False
-    return True
 
 
 def build_glob_listener_key(
