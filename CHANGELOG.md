@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.13 - 2025-12-21
+
+- Change: use case-sensitive matching with `fnmatch.fnmatchcase` for glob and pattern matching to make behavior predictable across platforms.
+- Fix: normalize single-string include/exclude patterns and add defensive logging for pattern matching errors.
+- Test: add unit tests for `matches_patterns` and expanded test coverage for single-string includes and invalid patterns.
+- Log: increased debug visibility for matching decisions and proxy initialization from state_changed events.
+
 ## 1.0.12 - 2025-12-21
 
 - Test: add unit tests for `matches_patterns` in `glob_helpers.py`.
