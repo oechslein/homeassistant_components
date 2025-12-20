@@ -1,5 +1,4 @@
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 
@@ -18,9 +17,7 @@ class SensorProxyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title=user_input[CONF_NAME], data=user_input
-            )
+            return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
 
         data_schema = vol.Schema(
             {
