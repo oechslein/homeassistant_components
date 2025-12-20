@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.11 - 2025-12-21
+
+- Release: publish a clean v1.0.11 replacing v1.0.10 to ensure HACS compatibility and include minor packaging/release metadata fixes.
+
 ## 1.0.10 - 2025-12-20
 
 - Add: more verbose debug logs for proxy lifecycle and utility meter lifecycle events to assist troubleshooting (creation, removal, and cleanup).
