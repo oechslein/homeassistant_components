@@ -39,6 +39,11 @@ PLATFORM_SCHEMA = SENSOR_PLATFORM_SCHEMA.extend(
         vol.Optional("device_id"): cv.string,
         vol.Optional("include_patterns"): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional("exclude_patterns"): vol.All(cv.ensure_list, [cv.string]),
+        # Utility meter options (per-proxy)
+        vol.Optional(CONF_CREATE_UTILITY_METERS): cv.boolean,
+        vol.Optional(CONF_UTILITY_METER_TYPES): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional("utility_name_template"): cv.string,
+        vol.Optional("utility_unique_id_template"): cv.string,
     }
 )
 
@@ -73,8 +78,19 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     if source_entity_id:
         new_unique_id = config.get(CONF_UNIQUE_ID)
         name = config.get(CONF_NAME)
+        # Utility meter options (per-proxy)
+        create_utility_meters = config.get(CONF_CREATE_UTILITY_METERS, False)
+        utility_meter_types = config.get(CONF_UTILITY_METER_TYPES)
+        utility_name_template = config.get("utility_name_template")
+        utility_unique_id_template = config.get("utility_unique_id_template")
         entities.append(
-            SensorProxySensor(hass, name, source_entity_id, new_unique_id, device_id)
+            SensorProxySensor(
+                hass, name, source_entity_id, new_unique_id, device_id,
+                create_utility_meters=create_utility_meters,
+                utility_meter_types=utility_meter_types,
+                utility_name_template=utility_name_template,
+                utility_unique_id_template=utility_unique_id_template,
+            )
         )
 
     # If glob pattern provided, expand existing states and listen for new ones.
@@ -82,6 +98,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     if source_glob:
         name_template = config.get("name_template", "copy_*")
         unique_template = config.get("unique_id_template", "copy_*")
+        # Utility meter options (per-proxy)
+        create_utility_meters = config.get(CONF_CREATE_UTILITY_METERS, False)
+        utility_meter_types = config.get(CONF_UTILITY_METER_TYPES)
+        utility_name_template = config.get("utility_name_template")
+        utility_unique_id_template = config.get("utility_unique_id_template")
 
         # Track created unique_ids to avoid duplicates
         created_unique_ids = set()
@@ -109,7 +130,13 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
             name = render_template(name_template, state.entity_id)
             entities.append(
-                SensorProxySensor(hass, name, state.entity_id, unique_id, device_id)
+                SensorProxySensor(
+                    hass, name, state.entity_id, unique_id, device_id,
+                    create_utility_meters=create_utility_meters,
+                    utility_meter_types=utility_meter_types,
+                    utility_name_template=utility_name_template,
+                    utility_unique_id_template=utility_unique_id_template,
+                )
             )
             created_unique_ids.add(unique_id)
 
@@ -137,7 +164,13 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 return
             name = render_template(name_template, entity_id)
             entities_to_add = [
-                SensorProxySensor(hass, name, entity_id, unique_id, device_id)
+                SensorProxySensor(
+                    hass, name, entity_id, unique_id, device_id,
+                    create_utility_meters=create_utility_meters,
+                    utility_meter_types=utility_meter_types,
+                    utility_name_template=utility_name_template,
+                    utility_unique_id_template=utility_unique_id_template,
+                )
             ]
             async_add_entities(entities_to_add)
             created_unique_ids.add(unique_id)
@@ -267,13 +300,29 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class SensorProxySensor(SensorEntity):
-    def __init__(self, hass, name, source_entity_id, unique_id, device_id=None):
+    def __init__(
+        self,
+        hass,
+        name,
+        source_entity_id,
+        unique_id,
+        device_id=None,
+        create_utility_meters=False,
+        utility_meter_types=None,
+        utility_name_template=None,
+        utility_unique_id_template=None,
+    ):
         self._hass = hass
         self._attr_name = name
         self._attr_unique_id = unique_id  # Uses YAML unique_id directly
         self._source_entity_id = source_entity_id
         self._device_id = device_id
         self._unsub = None
+        # Per-proxy utility meter options
+        self._create_utility_meters = create_utility_meters
+        self._utility_meter_types = utility_meter_types
+        self._utility_name_template = utility_name_template
+        self._utility_unique_id_template = utility_unique_id_template
         # initialize values from current state
         source_state = hass.states.get(self._source_entity_id)
         if source_state:
@@ -300,6 +349,64 @@ class SensorProxySensor(SensorEntity):
         self._unsub = async_track_state_change_event(
             self.hass, self._source_entity_id, self._async_source_changed_event
         )
+
+        # Per-proxy utility meter creation (if enabled)
+        if self._create_utility_meters:
+            # Use per-proxy or global types
+            meter_types = self._utility_meter_types
+            if not meter_types:
+                meter_types = self._hass.data.get(DOMAIN_CONST, {}).get(
+                    CONF_UTILITY_METER_TYPES, DEFAULT_UTILITY_METER_TYPES
+                )
+            # Use per-proxy or fallback templates
+            name_template = self._utility_name_template or f"{self._attr_name}_{{cycle}}"
+            unique_id_template = self._utility_unique_id_template or f"{self._attr_unique_id}_{{cycle}}"
+            # For each meter type, create a utility meter entity if not already present
+            for meter_type in meter_types:
+                # Render name and unique_id
+                meter_name = name_template.replace("{cycle}", meter_type)
+                meter_unique_id = unique_id_template.replace("{cycle}", meter_type)
+                # Check if already exists
+                entity_registry = er.async_get(self._hass)
+                existing = entity_registry.async_get_entity_id(
+                    domain="sensor", platform="utility_meter", unique_id=meter_unique_id
+                )
+                if existing and self._hass.states.get(existing):
+                    _LOGGER.debug("Utility meter exists, skipping: %s", meter_unique_id)
+                    continue
+                # Only create if source qualifies
+                source_state = self._hass.states.get(self._source_entity_id)
+                if not source_state:
+                    continue
+                attrs = source_state.attributes
+                if attrs.get("state_class") != "total_increasing":
+                    continue
+                if attrs.get("device_class") != "energy":
+                    continue
+                # Build params for VirtualUtilityMeter
+                params = {
+                    "hass": self._hass,
+                    "source_entity": self._source_entity_id,
+                    "name": meter_name,
+                    "meter_type": meter_type,
+                    "meter_offset": DEFAULT_OFFSET,
+                    "net_consumption": False,
+                    "tariff": None,
+                    "tariff_entity": None,
+                    "parent_meter": self.entity_id,
+                    "delta_values": False,
+                    "cron_pattern": None,
+                    "periodically_resetting": False,
+                    "sensor_always_available": True,
+                    "unique_id": meter_unique_id,
+                }
+                utility_meter = VirtualUtilityMeter(**params)
+                utility_meter.entity_id = f"{self.entity_id}_{meter_type}"
+                # Add to HA
+                self.hass.async_create_task(self.hass.helpers.entity_platform.async_add_entities([utility_meter]))
+                # Bookkeeping
+                self._hass.data.setdefault(DOMAIN_CONST, {}).setdefault("created_utility_meters", {})
+                self._hass.data[DOMAIN_CONST]["created_utility_meters"][meter_unique_id] = utility_meter.entity_id
 
     async def async_will_remove_from_hass(self) -> None:
         """Unsubscribe listeners when removed."""

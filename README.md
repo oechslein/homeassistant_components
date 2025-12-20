@@ -55,6 +55,7 @@ Per-proxy (YAML) options:
 
 ```yaml
 sensor:
+  # Single proxy example
   - platform: sensor_proxy
     source_entity_id: sensor.refoss_3_energy
     name: copy_refoss_3_energy
@@ -63,9 +64,11 @@ sensor:
     utility_meter_types:
       - daily
       - monthly
-    # Optional templates for utility meters
-    utility_name_template: "copy_*_{cycle}"
-    utility_unique_id_template: "copy_*_{cycle}"
+    # Optional: only for single-entity proxies
+    utility_name_template: "copy_refoss_3_energy_{cycle}"
+    utility_unique_id_template: "copy_refoss_3_energy_{cycle}"
+
+  # Glob proxy example
   - platform: sensor_proxy
     source_entity_glob: "sensor.house_energy_*"
     name_template: "proxy_*"
@@ -78,6 +81,7 @@ sensor:
     utility_meter_types:
       - daily
       - monthly
+    # Optional: only for glob proxies
     utility_name_template: "proxy_*_{cycle}"
     utility_unique_id_template: "proxy_*_{cycle}"
 ```
