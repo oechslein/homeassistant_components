@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.event import async_track_state_change
+from homeassistant.helpers.event import async_track_state_change_event
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,9 +77,9 @@ class SensorProxySensor(SensorEntity):
                 suggested_area_id=area_id,
             )
 
-        # Subscribe to state changes on the source entity
-        self._unsub = async_track_state_change(
-            self.hass, self._source_entity_id, self._async_source_changed
+        # Subscribe to state change events on the source entity (new API)
+        self._unsub = async_track_state_change_event(
+            self.hass, self._source_entity_id, self._async_source_changed_event
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -114,6 +114,15 @@ class SensorProxySensor(SensorEntity):
 
         # Push updated state to HA
         self.async_write_ha_state()
+
+    @callback
+    def _async_source_changed_event(self, event):
+        """Wrap state_changed event to the old-style callback signature."""
+        data = event.data
+        entity_id = data.get("entity_id")
+        old_state = data.get("old_state")
+        new_state = data.get("new_state")
+        self._async_source_changed(entity_id, old_state, new_state)
 
     def update(self):
         """Legacy update method: refresh from current state."""
