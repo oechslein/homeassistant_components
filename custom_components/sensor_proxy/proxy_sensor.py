@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable, Optional, Tuple
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
@@ -217,10 +221,12 @@ class SensorProxySensor(SensorEntity):
         )
 
         attrs = source_state.attributes
+        # Only create utility meters for energy accumulators reporting a
+        # total_increasing state_class and device_class == energy.
         if (
-            attrs.get("state_class") != "total_increasing"
-            or attrs.get("device_class") != "energy"
-        ):
+            attrs.get("state_class")
+            not in (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
+        ) or (attrs.get("device_class") != SensorDeviceClass.ENERGY):
             return
 
         meters_to_add = []
