@@ -1,7 +1,7 @@
 {
   "domain": "sensor_proxy",
   "name": "Sensor Proxy",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "documentation": "https://github.com/oechslein/homeassistant_components",
   "description": "Clones sensor states/attributes with custom names and device binding. Supports per-proxy utility meter creation and full YAML config compatibility.",
   "issue_tracker": "https://github.com/oechslein/homeassistant_components/issues",

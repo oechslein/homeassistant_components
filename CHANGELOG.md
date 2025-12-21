@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.16 - 2025-12-21
+
+- Fix: handle restored registry entries that don't have an active entity by creating the proxy entity instance so it can initialize from the now-available source (prevents "Forced update failed. Entity ... not found" warnings). ✅
+
 ## 1.0.15 - 2025-12-21
 
 - Fix: initialize restored proxies when source becomes available (request an entity update for restored proxies so they are initialized from the source) ✅

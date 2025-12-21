@@ -181,14 +181,33 @@ async def async_setup_platform(
                 domain="sensor", platform="sensor_proxy", unique_id=unique_id
             )
             if existing_eid:
-                # If the entity already exists in the registry but is restored/unavailable,
-                # ask Home Assistant to update it so the entity's update()/async_added_to_hass
-                # can initialize it from the now-available source.
                 existing_state = hass.states.get(existing_eid)
-                if existing_state is None or existing_state.state in (
-                    "unavailable",
-                    "unknown",
-                ):
+                # If registry has an entry but there's no active entity, create one now
+                if existing_state is None:
+                    _LOGGER.debug(
+                        "Registry has %s for unique_id %s but no active entity; creating instance",
+                        existing_eid,
+                        unique_id,
+                    )
+                    name = render_template(name_template, entity_id)
+                    entity = SensorProxySensor(
+                        hass,
+                        name,
+                        entity_id,
+                        unique_id,
+                        device_id,
+                        create_utility_meters=utility_options.create,
+                        utility_meter_types=list(utility_options.meter_types),
+                        utility_name_template=utility_options.name_template,
+                        utility_unique_id_template=utility_options.unique_id_template,
+                        glob_listener_key=listener_key,
+                    )
+                    async_add_entities([entity])
+                    created_unique_ids.add(unique_id)
+                    return
+
+                # If the entity exists but is unavailable/unknown, request an update
+                if existing_state.state in ("unavailable", "unknown"):
                     _LOGGER.debug(
                         "Found restored proxy %s for unique_id %s; requesting update",
                         existing_eid,
