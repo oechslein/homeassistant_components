@@ -31,6 +31,7 @@ UTILITY_METER_ALLOWED_KWARGS = {
     "cron_pattern",
     "periodically_resetting",
     "sensor_always_available",
+    "unique_id",
 }
 
 
