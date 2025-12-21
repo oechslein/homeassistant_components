@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.15 - 2025-12-21
+
+- Fix: initialize restored proxies when source becomes available (request an entity update for restored proxies so they are initialized from the source) ✅
+- Fix: reduced noisy DEBUG logging from glob listeners and proxy updates; log only initialization/availability transitions and errors to make logs actionable ✅
+
 ## 1.0.13 - 2025-12-21
 
 - Change: use case-sensitive matching with `fnmatch.fnmatchcase` for glob and pattern matching to make behavior predictable across platforms.

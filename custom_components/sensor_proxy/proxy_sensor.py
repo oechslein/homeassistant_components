@@ -71,29 +71,33 @@ class SensorProxySensor(SensorEntity):
 
         if self._device_id:
             entity_registry = er.async_get(self.hass)
-            source_entry = entity_registry.async_get(self._source_entity_id)
-            area_id = source_entry.area_id if source_entry else None
+            # Associate with device; registry does not accept 'suggested_area_id'
             entity_registry.async_get_or_create(
                 "sensor",
                 "sensor_proxy",
                 self.unique_id,
                 device_id=self._device_id,
-                suggested_area_id=area_id,
             )
 
         self._unsub = async_track_state_change_event(
             self.hass, self._source_entity_id, self._async_source_changed_event
         )
 
+        # Attempt to initialize from the current source state (helps restored proxies)
+        try:
+            self.update()
+        except Exception:
+            _LOGGER.exception(
+                "Failed to initialize proxy %s from source on add", self.name
+            )
+
         # Informative debug: the proxy entity is now present in hass and listening
         _LOGGER.debug(
-            "Proxy sensor created: name=%s unique_id=%s source=%s device_id=%s device_class=%s state_class=%s available=%s",
+            "Proxy sensor created: name=%s unique_id=%s source=%s device_id=%s available=%s",
             self.name,
             self.unique_id,
             self._source_entity_id,
             self._device_id,
-            self._attr_device_class,
-            self._attr_state_class,
             self.available,
         )
 
@@ -117,13 +121,10 @@ class SensorProxySensor(SensorEntity):
         self._release_glob_listener()
 
     def _copy_source_attributes(self, source_state) -> None:
+        prev_available = self._attr_available
+
         if source_state is None or source_state.state in ("unavailable", "unknown"):
-            _LOGGER.debug(
-                "Source unavailable for proxy %s (source=%s): state=%s",
-                self.name,
-                self._source_entity_id,
-                None if source_state is None else source_state.state,
-            )
+            # Mark as unavailable only if it changed to reduce log spam
             self._attr_native_value = None
             self._attr_extra_state_attributes = None
             self._attr_native_unit_of_measurement = None
@@ -131,8 +132,15 @@ class SensorProxySensor(SensorEntity):
             self._attr_state_class = None
             self._attr_icon = None
             self._attr_available = False
+            if prev_available:
+                _LOGGER.info(
+                    "Proxy %s marked unavailable (source=%s)",
+                    self.name,
+                    self._source_entity_id,
+                )
             return
 
+        # Copy attributes from source and log initialization only when availability changes
         self._attr_available = True
         self._attr_native_value = source_state.state
         self._attr_extra_state_attributes = source_state.attributes.copy()
@@ -143,43 +151,22 @@ class SensorProxySensor(SensorEntity):
         self._attr_state_class = attrs.get("state_class")
         self._attr_icon = attrs.get("icon")
 
-        # Debug: show the copied attribute snapshot for visibility in logs
-        _LOGGER.debug(
-            "Proxy %s copied attributes from %s: state=%s device_class=%s state_class=%s unit=%s available=%s",
-            self.name,
-            self._source_entity_id,
-            self._attr_native_value,
-            self._attr_device_class,
-            self._attr_state_class,
-            self._attr_native_unit_of_measurement,
-            self._attr_available,
-        )
+        if not prev_available:
+            _LOGGER.info(
+                "Proxy %s initialized from source %s: state=%s",
+                self.name,
+                self._source_entity_id,
+                self._attr_native_value,
+            )
 
     @callback
     def _async_source_changed(self, entity_id, old_state, new_state) -> None:
-        _LOGGER.debug(
-            "Source state change for proxy %s: source=%s old=%s new=%s",
-            self.name,
-            entity_id,
-            None if old_state is None else old_state.state,
-            None if new_state is None else new_state.state,
-        )
 
         if new_state is None:
             self._attr_native_value = None
             self._attr_extra_state_attributes = None
         else:
             self._copy_source_attributes(new_state)
-
-        # Debug: report resulting availability and key attrs after handling
-        _LOGGER.debug(
-            "Proxy %s state after update: state=%s device_class=%s state_class=%s available=%s",
-            self.name,
-            self._attr_native_value,
-            self._attr_device_class,
-            self._attr_state_class,
-            self._attr_available,
-        )
 
         self.async_write_ha_state()
 

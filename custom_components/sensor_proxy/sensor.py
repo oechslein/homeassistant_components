@@ -97,11 +97,6 @@ async def async_setup_platform(
 
         for state in hass.states.async_all():
             if not fnmatch.fnmatchcase(state.entity_id, source_glob):
-                _LOGGER.debug(
-                    "Glob skip (no glob match): entity_id=%s source_glob=%s",
-                    state.entity_id,
-                    source_glob,
-                )
                 continue
             # Skip sources that are unavailable/unknown — create proxies only for available sources
             if state.state in ("unavailable", "unknown"):
@@ -113,12 +108,6 @@ async def async_setup_platform(
                 continue
             object_id = state.entity_id.split(".", 1)[1]
             if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                _LOGGER.debug(
-                    "Pattern skip (include/exclude): object_id=%s include=%s exclude=%s",
-                    object_id,
-                    include_patterns,
-                    exclude_patterns,
-                )
                 continue
 
             unique_id = render_template(unique_template, state.entity_id)
@@ -173,32 +162,15 @@ async def async_setup_platform(
             if not entity_id:
                 return
             new_state = data.get("new_state")
-            # Debug: show event context and which listener is handling it
-            _LOGGER.debug(
-                "Glob listener event: listener_key=%s event_entity=%s new_state=%s",
-                listener_key,
-                entity_id,
-                None if new_state is None else new_state.state,
-            )
+
             # First ensure this event is for a matching source; ignore unrelated entity events
             if not fnmatch.fnmatchcase(entity_id, source_glob):
                 return
             # Only create proxies when the source has a valid state (available)
             if new_state is None or new_state.state in ("unavailable", "unknown"):
-                _LOGGER.debug(
-                    "Glob callback skip (source state not available): source=%s state=%s",
-                    entity_id,
-                    None if new_state is None else new_state.state,
-                )
                 return
             object_id = entity_id.split(".", 1)[1]
             if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                _LOGGER.debug(
-                    "Glob callback pattern skip (include/exclude): object_id=%s include=%s exclude=%s",
-                    object_id,
-                    include_patterns,
-                    exclude_patterns,
-                )
                 return
             # create proxy if not already created
             unique_id = render_template(unique_template, entity_id)
@@ -209,6 +181,26 @@ async def async_setup_platform(
                 domain="sensor", platform="sensor_proxy", unique_id=unique_id
             )
             if existing_eid:
+                # If the entity already exists in the registry but is restored/unavailable,
+                # ask Home Assistant to update it so the entity's update()/async_added_to_hass
+                # can initialize it from the now-available source.
+                existing_state = hass.states.get(existing_eid)
+                if existing_state is None or existing_state.state in (
+                    "unavailable",
+                    "unknown",
+                ):
+                    _LOGGER.debug(
+                        "Found restored proxy %s for unique_id %s; requesting update",
+                        existing_eid,
+                        unique_id,
+                    )
+                    hass.async_create_task(
+                        hass.services.async_call(
+                            "homeassistant",
+                            "update_entity",
+                            {"entity_id": existing_eid},
+                        )
+                    )
                 created_unique_ids.add(unique_id)
                 return
             name = render_template(name_template, entity_id)
