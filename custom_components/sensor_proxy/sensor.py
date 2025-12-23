@@ -174,6 +174,8 @@ async def async_setup_platform(
 
             # Listen for new entities being added to the registry
             # This handles entities that are added after startup
+            registry = er.async_get(hass)
+            
             @callback
             def _on_entity_registry_updated(
                 action: str, data: dict[str, Any]
@@ -202,7 +204,6 @@ async def async_setup_platform(
                 if unique_id in created_unique_ids:
                     return
                 
-                registry = er.async_get(hass)
                 existing_eid = registry.async_get_entity_id(
                     domain="sensor", platform="sensor_proxy", unique_id=unique_id
                 )
@@ -210,15 +211,8 @@ async def async_setup_platform(
                     created_unique_ids.add(unique_id)
                     return
                 
-                # Wait for entity to have a valid state before creating proxy
-                state = hass.states.get(entity_id)
-                if not state or state.state in ("unavailable", "unknown"):
-                    _LOGGER.debug(
-                        "New entity %s matches pattern but not yet available, skipping for now",
-                        entity_id,
-                    )
-                    return
-                
+                # Create proxy even if source is not yet available
+                # SensorProxySensor will handle unavailable states and update when available
                 name = render_template(name_template, entity_id)
                 entity = SensorProxySensor(
                     hass,
@@ -245,7 +239,6 @@ async def async_setup_platform(
                 listener_entry["matching_entities"].add(entity_id)
             
             # Subscribe to entity registry updates
-            registry = er.async_get(hass)
             unsubscribe = registry.async_subscribe(_on_entity_registry_updated)
             listener_entry["unsubscribe"] = unsubscribe
             bus_listeners.append(unsubscribe)
