@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -45,17 +45,18 @@ class SensorProxySensor(SensorEntity):
         self._attr_unique_id = unique_id
         self._source_entity_id = source_entity_id
         self._device_id = device_id
-        self._unsub = None
+        self._unsub: Optional[Callable[[], None]] = None
         self._create_utility_meters = create_utility_meters
         self._utility_meter_types = utility_meter_types
         self._utility_name_template = utility_name_template
         self._utility_unique_id_template = utility_unique_id_template
         self._created_meter_entities: list[tuple[str, str | None]] = []
+        self._utility_meters_created = False
 
         # Default HA entity attributes; ensure they exist even if the source
         # entity is missing at initialization to avoid AttributeError on access.
         self._attr_native_value = None
-        self._attr_extra_state_attributes = None
+        self._attr_extra_state_attributes = {}
         self._attr_native_unit_of_measurement = None
         self._attr_device_class = None
         self._attr_state_class = None
@@ -70,14 +71,21 @@ class SensorProxySensor(SensorEntity):
         await super().async_added_to_hass()
 
         if self._device_id:
-            entity_registry = er.async_get(self.hass)
-            # Associate with device; registry does not accept 'suggested_area_id'
-            entity_registry.async_get_or_create(
-                "sensor",
-                "sensor_proxy",
-                self.unique_id,
-                device_id=self._device_id,
-            )
+            if not self.unique_id:
+                _LOGGER.warning(
+                    "Device ID provided for %s but no unique_id specified. Device association requires a unique_id. "
+                    "Please add a unique_id to your configuration.",
+                    self.name or self._source_entity_id,
+                )
+            else:
+                entity_registry = er.async_get(self.hass)
+                # Associate with device; registry does not accept 'suggested_area_id'
+                entity_registry.async_get_or_create(
+                    "sensor",
+                    "sensor_proxy",
+                    self.unique_id,
+                    device_id=self._device_id,
+                )
 
         self._unsub = async_track_state_change_event(
             self.hass, self._source_entity_id, self._async_source_changed_event
@@ -101,8 +109,8 @@ class SensorProxySensor(SensorEntity):
             self.available,
         )
 
-        if self._create_utility_meters:
-            await self._async_create_utility_meters()
+        # Don't create utility meters here - wait until source is available
+        # Utility meters will be created on first successful state copy
 
     async def async_will_remove_from_hass(self) -> None:
         # Debug: proxy is being removed from hass
@@ -125,7 +133,7 @@ class SensorProxySensor(SensorEntity):
         if source_state is None or source_state.state in ("unavailable", "unknown"):
             # Mark as unavailable only if it changed to reduce log spam
             self._attr_native_value = None
-            self._attr_extra_state_attributes = None
+            self._attr_extra_state_attributes = {}
             self._attr_native_unit_of_measurement = None
             self._attr_device_class = None
             self._attr_state_class = None
@@ -157,13 +165,18 @@ class SensorProxySensor(SensorEntity):
                 self._source_entity_id,
                 self._attr_native_value,
             )
+            # Create utility meters once when first initialized
+            if self._create_utility_meters and not self._utility_meters_created:
+                self._utility_meters_created = True
+                # Schedule async task from sync callback
+                self._hass.async_create_task(self._async_create_utility_meters())
 
     @callback
     def _async_source_changed(self, entity_id, old_state, new_state) -> None:
 
         if new_state is None:
             self._attr_native_value = None
-            self._attr_extra_state_attributes = None
+            self._attr_extra_state_attributes = {}
         else:
             self._copy_source_attributes(new_state)
 
@@ -185,17 +198,31 @@ class SensorProxySensor(SensorEntity):
     async def _async_create_utility_meters(self) -> None:
         platform = self.platform
         if not platform:
-            _LOGGER.debug("Platform unavailable; skipping utility meter creation")
+            _LOGGER.warning(
+                "Platform unavailable for %s; skipping utility meter creation",
+                self.entity_id,
+            )
             return
 
         meter_types = self._utility_meter_types or self._hass.data.get(
             DOMAIN_CONST, {}
         ).get(CONF_UTILITY_METER_TYPES, DEFAULT_UTILITY_METER_TYPES)
 
+        _LOGGER.info(
+            "Attempting to create utility meters for %s with types: %s",
+            self.entity_id,
+            meter_types,
+        )
+
         # Defer default name generation until we have the proxy object id to avoid
         # duplicating prefixes for glob-created proxies (e.g. avoid 'copy2_copy2_xxx').
         source_state = self._hass.states.get(self._source_entity_id)
         if not source_state:
+            _LOGGER.warning(
+                "Source entity %s not found when creating utility meters for %s",
+                self._source_entity_id,
+                self.entity_id,
+            )
             return
 
         entity_registry = er.async_get(self._hass)
@@ -218,10 +245,22 @@ class SensorProxySensor(SensorEntity):
         attrs = source_state.attributes
         # Only create utility meters for energy accumulators reporting a
         # total_increasing state_class and device_class == energy.
+        state_class = attrs.get("state_class")
+        device_class = attrs.get("device_class")
+
+        # StrEnum can be compared directly with strings
         if (
-            attrs.get("state_class")
+            state_class
             not in (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
-        ) or (attrs.get("device_class") != SensorDeviceClass.ENERGY):
+        ) or (device_class != SensorDeviceClass.ENERGY):
+            _LOGGER.info(
+                "Skipping utility meter creation for %s: source %s has state_class=%s, device_class=%s "
+                "(requires state_class=total/total_increasing and device_class=energy)",
+                self.entity_id,
+                self._source_entity_id,
+                state_class,
+                device_class,
+            )
             return
 
         meters_to_add = []

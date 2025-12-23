@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 - 2025-12-23
+
+- **Fix**: Utility meters now created after source entity becomes available, ensuring proper initialization timing ✅
+- **Fix**: Updated to modern Home Assistant ConfigEntries APIs (async_forward_entry_setups, async_unload_platforms) ✅
+- **Fix**: Added type safety check for unique_id before device association ✅
+- **Enhancement**: Added detailed logging for utility meter creation process to aid troubleshooting ✅
+- **Enhancement**: Added warning log when device_id is provided without unique_id ✅
+
 ## 1.1.0 - 2025-12-23
 
 - **Breaking Change**: Removed glob pattern functionality (`source_entity_glob`, `name_template`, `unique_id_template`, `include_patterns`, `exclude_patterns`) to significantly reduce code complexity. The integration now only supports single entity proxies with optional utility meters. If you need to create multiple proxy sensors, configure them individually in YAML. ✅
