@@ -77,232 +77,223 @@ async def async_setup_platform(
         include_patterns = config.get("include_patterns") or []
         exclude_patterns = config.get("exclude_patterns") or []
         
-        # Validate that glob pattern has explicit domain
+        # Validate that glob pattern has explicit domain (single check, single error)
         domain = extract_domain_from_glob(source_glob)
         if not domain:
             _LOGGER.error(
                 "Glob pattern '%s' must have explicit domain (e.g., 'sensor.original_*'). "
-                "Skipping glob configuration.",
+                "Wildcarded domains are not supported. Skipping glob configuration.",
                 source_glob,
             )
         else:
             listener_key = build_glob_listener_key(
-                source_glob,
-                include_patterns,
-                exclude_patterns,
-                name_template,
-                unique_template,
-                utility_options.create,
-                utility_options.meter_types,
-                utility_options.name_template,
-                utility_options.unique_id_template,
-                device_id,
-            )
+            source_glob,
+            include_patterns,
+            exclude_patterns,
+            name_template,
+            unique_template,
+            utility_options.create,
+            utility_options.meter_types,
+            utility_options.name_template,
+            utility_options.unique_id_template,
+            device_id,
+        )
 
-            listener_entry = glob_listener_store.setdefault(
-                listener_key, {"unsubscribe": None, "refcount": 0, "matching_entities": set()}
-            )
-            old_unsub = listener_entry.get("unsubscribe")
-            if old_unsub:
-                old_unsub()
-                if old_unsub in bus_listeners:
-                    bus_listeners.remove(old_unsub)
-            listener_entry["unsubscribe"] = None
-            listener_entry.setdefault("refcount", 0)
-            listener_entry.setdefault("matching_entities", set())
-            glob_active_keys.add(listener_key)
+        listener_entry = glob_listener_store.setdefault(
+            listener_key, {"unsubscribe": None, "refcount": 0, "matching_entities": set()}
+        )
+        old_unsub = listener_entry.get("unsubscribe")
+        if old_unsub:
+            old_unsub()
+            if old_unsub in bus_listeners:
+                bus_listeners.remove(old_unsub)
+        listener_entry["unsubscribe"] = None
+        listener_entry.setdefault("refcount", 0)
+        listener_entry.setdefault("matching_entities", set())
+        glob_active_keys.add(listener_key)
 
-            # Get all matching entities from registry (not just current states)
-            matching_entity_ids = get_matching_entity_ids(
-                hass, source_glob, include_patterns, exclude_patterns
-            )
+        # Get all matching entities from registry (not just current states)
+        matching_entity_ids = get_matching_entity_ids(
+            hass, source_glob, include_patterns, exclude_patterns
+        )
+        
+        # Store matching entities in listener entry for future reference
+        listener_entry["matching_entities"].update(matching_entity_ids)
+        
+        _LOGGER.info(
+            "Creating proxies for %d matching entities (glob='%s')",
+            len(matching_entity_ids),
+            source_glob,
+        )
+
+        # Create proxies for all matching entities immediately
+        # Note: Each SensorProxySensor sets up its own targeted state change listener
+        # in async_added_to_hass() via async_track_state_change_event(), so we no longer
+        # need a global listener that processes all entity state changes.
+        registry = er.async_get(hass)
+        for entity_id in matching_entity_ids:
+            state = hass.states.get(entity_id)
             
-            # Store matching entities in listener entry for future reference
-            listener_entry["matching_entities"].update(matching_entity_ids)
+            # Skip sources that are unavailable/unknown at startup
+            if state and state.state in ("unavailable", "unknown"):
+                _LOGGER.debug(
+                    "Glob skip (source not available): entity_id=%s state=%s",
+                    entity_id,
+                    state.state,
+                )
+                continue
+
+            unique_id = render_template(unique_template, entity_id)
+            
+            # Skip if registry already has this unique_id
+            existing_eid = registry.async_get_entity_id(
+                domain="sensor", platform="sensor_proxy", unique_id=unique_id
+            )
+            if existing_eid:
+                _LOGGER.debug("Skipping existing proxy for unique_id %s", unique_id)
+                created_unique_ids.add(unique_id)
+                continue
+
+            name = render_template(name_template, entity_id)
+            entity = SensorProxySensor(
+                hass,
+                name,
+                entity_id,
+                unique_id,
+                device_id,
+                create_utility_meters=utility_options.create,
+                utility_meter_types=list(utility_options.meter_types),
+                utility_name_template=utility_options.name_template,
+                utility_unique_id_template=utility_options.unique_id_template,
+                glob_listener_key=listener_key,
+            )
+            _LOGGER.debug(
+                "Scheduling creation of proxy (initial scan): source=%s name=%s unique_id=%s",
+                entity_id,
+                name,
+                unique_id,
+            )
+            entities.append(entity)
+            created_unique_ids.add(unique_id)
+
+        # Listen for state changes when entities are added or removed from the domain
+        # This is more efficient than listening to all entity registry changes
+        # because it's filtered by domain and only fires when entities actually have states
+        @callback
+        def _on_state_added(event: Event) -> None:
+            """Handle new entities added to the domain."""
+            entity_id = event.data.get("entity_id")
+            if not entity_id:
+                return
+            
+            # Check if this entity matches our glob pattern
+            if not fnmatch.fnmatchcase(entity_id, source_glob):
+                return
+            
+            # Check include/exclude patterns
+            object_id = entity_id.split(".", 1)[1]
+            if not matches_patterns(object_id, include_patterns, exclude_patterns):
+                return
+            
+            unique_id = render_template(unique_template, entity_id)
+            
+            # Skip if already created
+            if unique_id in created_unique_ids:
+                return
+            
+            registry = er.async_get(hass)
+            existing_eid = registry.async_get_entity_id(
+                domain="sensor", platform="sensor_proxy", unique_id=unique_id
+            )
+            if existing_eid:
+                created_unique_ids.add(unique_id)
+                return
+            
+            # Create proxy for the new entity
+            name = render_template(name_template, entity_id)
+            entity = SensorProxySensor(
+                hass,
+                name,
+                entity_id,
+                unique_id,
+                device_id,
+                create_utility_meters=utility_options.create,
+                utility_meter_types=list(utility_options.meter_types),
+                utility_name_template=utility_options.name_template,
+                utility_unique_id_template=utility_options.unique_id_template,
+                glob_listener_key=listener_key,
+            )
             
             _LOGGER.info(
-                "Creating proxies for %d matching entities (glob='%s')",
-                len(matching_entity_ids),
-                source_glob,
+                "Creating proxy for newly added entity: source=%s name=%s unique_id=%s",
+                entity_id,
+                name,
+                unique_id,
             )
-
-            # Create proxies for all matching entities immediately
-            # Note: Each SensorProxySensor sets up its own targeted state change listener
-            # in async_added_to_hass() via async_track_state_change_event(), so we no longer
-            # need a global listener that processes all entity state changes.
+            
+            async_add_entities([entity])
+            created_unique_ids.add(unique_id)
+            listener_entry["matching_entities"].add(entity_id)
+        
+        @callback
+        def _on_state_removed(event: Event) -> None:
+            """Handle entities removed from the domain."""
+            entity_id = event.data.get("entity_id")
+            if not entity_id:
+                return
+            
+            # Check if this entity matches our glob pattern
+            if not fnmatch.fnmatchcase(entity_id, source_glob):
+                return
+            
+            # Check include/exclude patterns
+            object_id = entity_id.split(".", 1)[1]
+            if not matches_patterns(object_id, include_patterns, exclude_patterns):
+                return
+            
+            unique_id = render_template(unique_template, entity_id)
+            
+            # Find and remove the proxy entity
             registry = er.async_get(hass)
-            for entity_id in matching_entity_ids:
-                state = hass.states.get(entity_id)
-                
-                # Skip sources that are unavailable/unknown at startup
-                if state and state.state in ("unavailable", "unknown"):
-                    _LOGGER.debug(
-                        "Glob skip (source not available): entity_id=%s state=%s",
-                        entity_id,
-                        state.state,
-                    )
-                    continue
-
-                unique_id = render_template(unique_template, entity_id)
-                
-                # Skip if registry already has this unique_id
-                existing_eid = registry.async_get_entity_id(
-                    domain="sensor", platform="sensor_proxy", unique_id=unique_id
-                )
-                if existing_eid:
-                    _LOGGER.debug("Skipping existing proxy for unique_id %s", unique_id)
-                    created_unique_ids.add(unique_id)
-                    continue
-
-                name = render_template(name_template, entity_id)
-                entity = SensorProxySensor(
-                    hass,
-                    name,
+            proxy_entity_id = registry.async_get_entity_id(
+                domain="sensor", platform="sensor_proxy", unique_id=unique_id
+            )
+            
+            if proxy_entity_id:
+                _LOGGER.info(
+                    "Removing proxy for deleted source entity: source=%s proxy=%s",
                     entity_id,
-                    unique_id,
-                    device_id,
-                    create_utility_meters=utility_options.create,
-                    utility_meter_types=list(utility_options.meter_types),
-                    utility_name_template=utility_options.name_template,
-                    utility_unique_id_template=utility_options.unique_id_template,
-                    glob_listener_key=listener_key,
+                    proxy_entity_id,
                 )
-                _LOGGER.debug(
-                    "Scheduling creation of proxy (initial scan): source=%s name=%s unique_id=%s",
-                    entity_id,
-                    name,
-                    unique_id,
-                )
-                entities.append(entity)
-                created_unique_ids.add(unique_id)
-
-            # Listen for state changes when entities are added or removed from the domain
-            # This is more efficient than listening to all entity registry changes
-            # because it's filtered by domain and only fires when entities actually have states
-            domain = extract_domain_from_glob(source_glob)
-            if not domain:
-                # This should not happen due to earlier validation, but check defensively
-                _LOGGER.error(
-                    "Cannot extract domain from glob pattern '%s' for event tracking. "
-                    "Skipping dynamic entity tracking.",
-                    source_glob,
-                )
-            else:
-                @callback
-                def _on_state_added(event: Event) -> None:
-                    """Handle new entities added to the domain."""
-                    entity_id = event.data.get("entity_id")
-                    if not entity_id:
-                        return
-                    
-                    # Check if this entity matches our glob pattern
-                    if not fnmatch.fnmatchcase(entity_id, source_glob):
-                        return
-                    
-                    # Check include/exclude patterns
-                    object_id = entity_id.split(".", 1)[1]
-                    if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                        return
-                    
-                    unique_id = render_template(unique_template, entity_id)
-                    
-                    # Skip if already created
-                    if unique_id in created_unique_ids:
-                        return
-                    
-                    registry = er.async_get(hass)
-                    existing_eid = registry.async_get_entity_id(
-                        domain="sensor", platform="sensor_proxy", unique_id=unique_id
-                    )
-                    if existing_eid:
-                        created_unique_ids.add(unique_id)
-                        return
-                    
-                    # Create proxy for the new entity
-                    name = render_template(name_template, entity_id)
-                    entity = SensorProxySensor(
-                        hass,
-                        name,
-                        entity_id,
-                        unique_id,
-                        device_id,
-                        create_utility_meters=utility_options.create,
-                        utility_meter_types=list(utility_options.meter_types),
-                        utility_name_template=utility_options.name_template,
-                        utility_unique_id_template=utility_options.unique_id_template,
-                        glob_listener_key=listener_key,
-                    )
-                    
-                    _LOGGER.info(
-                        "Creating proxy for newly added entity: source=%s name=%s unique_id=%s",
-                        entity_id,
-                        name,
-                        unique_id,
-                    )
-                    
-                    async_add_entities([entity])
-                    created_unique_ids.add(unique_id)
-                    listener_entry["matching_entities"].add(entity_id)
-                
-                @callback
-                def _on_state_removed(event: Event) -> None:
-                    """Handle entities removed from the domain."""
-                    entity_id = event.data.get("entity_id")
-                    if not entity_id:
-                        return
-                    
-                    # Check if this entity matches our glob pattern
-                    if not fnmatch.fnmatchcase(entity_id, source_glob):
-                        return
-                    
-                    # Check include/exclude patterns
-                    object_id = entity_id.split(".", 1)[1]
-                    if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                        return
-                    
-                    unique_id = render_template(unique_template, entity_id)
-                    
-                    # Find and remove the proxy entity
-                    registry = er.async_get(hass)
-                    proxy_entity_id = registry.async_get_entity_id(
-                        domain="sensor", platform="sensor_proxy", unique_id=unique_id
-                    )
-                    
-                    if proxy_entity_id:
-                        _LOGGER.info(
-                            "Removing proxy for deleted source entity: source=%s proxy=%s",
-                            entity_id,
-                            proxy_entity_id,
-                        )
-                        # Remove from registry - this will trigger async_will_remove_from_hass
-                        registry.async_remove(proxy_entity_id)
-                        created_unique_ids.discard(unique_id)
-                        listener_entry["matching_entities"].discard(entity_id)
-                
-                # Subscribe to state added/removed events for the specific domain
-                # This is more efficient than listening to all entity registry changes
-                unsubscribe_added = async_track_state_added_domain(
-                    hass, domain, _on_state_added
-                )
-                unsubscribe_removed = async_track_state_removed_domain(
-                    hass, domain, _on_state_removed
-                )
-                
-                # Store both unsubscribe callbacks with error handling
-                def combined_unsubscribe():
-                    """Unsubscribe from both added and removed listeners."""
-                    try:
-                        unsubscribe_added()
-                    except Exception as ex:
-                        _LOGGER.error("Error unsubscribing from state_added listener: %s", ex)
-                    try:
-                        unsubscribe_removed()
-                    except Exception as ex:
-                        _LOGGER.error("Error unsubscribing from state_removed listener: %s", ex)
-                
-                unsubscribe = combined_unsubscribe
-                listener_entry["unsubscribe"] = unsubscribe
-                bus_listeners.append(unsubscribe)
+                # Remove from registry - this will trigger async_will_remove_from_hass
+                registry.async_remove(proxy_entity_id)
+                created_unique_ids.discard(unique_id)
+                listener_entry["matching_entities"].discard(entity_id)
+        
+        # Subscribe to state added/removed events for the specific domain
+        # This is more efficient than listening to all entity registry changes
+        unsubscribe_added = async_track_state_added_domain(
+            hass, domain, _on_state_added
+        )
+        unsubscribe_removed = async_track_state_removed_domain(
+            hass, domain, _on_state_removed
+        )
+        
+        # Store both unsubscribe callbacks with error handling
+        def combined_unsubscribe():
+            """Unsubscribe from both added and removed listeners."""
+            try:
+                unsubscribe_added()
+            except Exception as ex:
+                _LOGGER.error("Error unsubscribing from state_added listener: %s", ex)
+            try:
+                unsubscribe_removed()
+            except Exception as ex:
+                _LOGGER.error("Error unsubscribing from state_removed listener: %s", ex)
+        
+        unsubscribe = combined_unsubscribe
+        listener_entry["unsubscribe"] = unsubscribe
+        bus_listeners.append(unsubscribe)
 
     if entities:
         async_add_entities(entities)
