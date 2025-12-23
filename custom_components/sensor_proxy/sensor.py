@@ -172,20 +172,17 @@ async def async_setup_platform(
                 entities.append(entity)
                 created_unique_ids.add(unique_id)
 
-            # Listen for new entities being added to the registry
-            # This handles entities that are added after startup
+            # Listen for entity registry changes (new entities and removed entities)
+            # This handles entities that are added or removed after startup
             registry = er.async_get(hass)
             
             @callback
             def _on_entity_registry_updated(event: er.Event) -> None:
-                """Handle entity registry updates for new matching entities."""
+                """Handle entity registry updates for matching entities."""
                 data = event.data
-                
-                # Only process "create" events (new entities)
-                if data.get("action") != "create":
-                    return
-                
+                action = data.get("action")
                 entity_id = data.get("entity_id")
+                
                 if not entity_id:
                     return
                 
@@ -198,45 +195,67 @@ async def async_setup_platform(
                 if not matches_patterns(object_id, include_patterns, exclude_patterns):
                     return
                 
-                unique_id = render_template(unique_template, entity_id)
-                
-                # Skip if already created
-                if unique_id in created_unique_ids:
-                    return
-                
-                existing_eid = registry.async_get_entity_id(
-                    domain="sensor", platform="sensor_proxy", unique_id=unique_id
-                )
-                if existing_eid:
+                if action == "create":
+                    # Handle new entity creation
+                    unique_id = render_template(unique_template, entity_id)
+                    
+                    # Skip if already created
+                    if unique_id in created_unique_ids:
+                        return
+                    
+                    existing_eid = registry.async_get_entity_id(
+                        domain="sensor", platform="sensor_proxy", unique_id=unique_id
+                    )
+                    if existing_eid:
+                        created_unique_ids.add(unique_id)
+                        return
+                    
+                    # Create proxy even if source is not yet available
+                    # SensorProxySensor will handle unavailable states and update when available
+                    name = render_template(name_template, entity_id)
+                    entity = SensorProxySensor(
+                        hass,
+                        name,
+                        entity_id,
+                        unique_id,
+                        device_id,
+                        create_utility_meters=utility_options.create,
+                        utility_meter_types=list(utility_options.meter_types),
+                        utility_name_template=utility_options.name_template,
+                        utility_unique_id_template=utility_options.unique_id_template,
+                        glob_listener_key=listener_key,
+                    )
+                    
+                    _LOGGER.info(
+                        "Creating proxy for newly added entity: source=%s name=%s unique_id=%s",
+                        entity_id,
+                        name,
+                        unique_id,
+                    )
+                    
+                    async_add_entities([entity])
                     created_unique_ids.add(unique_id)
-                    return
-                
-                # Create proxy even if source is not yet available
-                # SensorProxySensor will handle unavailable states and update when available
-                name = render_template(name_template, entity_id)
-                entity = SensorProxySensor(
-                    hass,
-                    name,
-                    entity_id,
-                    unique_id,
-                    device_id,
-                    create_utility_meters=utility_options.create,
-                    utility_meter_types=list(utility_options.meter_types),
-                    utility_name_template=utility_options.name_template,
-                    utility_unique_id_template=utility_options.unique_id_template,
-                    glob_listener_key=listener_key,
-                )
-                
-                _LOGGER.info(
-                    "Creating proxy for newly added entity: source=%s name=%s unique_id=%s",
-                    entity_id,
-                    name,
-                    unique_id,
-                )
-                
-                async_add_entities([entity])
-                created_unique_ids.add(unique_id)
-                listener_entry["matching_entities"].add(entity_id)
+                    listener_entry["matching_entities"].add(entity_id)
+                    
+                elif action == "remove":
+                    # Handle entity removal - remove the corresponding proxy
+                    unique_id = render_template(unique_template, entity_id)
+                    
+                    # Find and remove the proxy entity
+                    proxy_entity_id = registry.async_get_entity_id(
+                        domain="sensor", platform="sensor_proxy", unique_id=unique_id
+                    )
+                    
+                    if proxy_entity_id:
+                        _LOGGER.info(
+                            "Removing proxy for deleted source entity: source=%s proxy=%s",
+                            entity_id,
+                            proxy_entity_id,
+                        )
+                        # Remove from registry - this will trigger async_will_remove_from_hass
+                        registry.async_remove(proxy_entity_id)
+                        created_unique_ids.discard(unique_id)
+                        listener_entry["matching_entities"].discard(entity_id)
             
             # Subscribe to entity registry updates via event bus
             unsubscribe = hass.bus.async_listen(
