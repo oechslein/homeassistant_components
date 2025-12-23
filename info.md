@@ -7,7 +7,6 @@
 - Copies state + attributes from source sensor
 - Inherits unit/device_class/state_class/icon  
 - Optional device binding
-- Glob-based cloning with include/exclude filters
-- Optional per-proxy utility meters (configure globally or per sensor)
+- Optional utility meters for energy sensors (configure globally or per sensor)
 
-> UI (HACS/config flow) currently supports the single-entity case only. Use YAML for glob templates, include/exclude filters, or automatic utility meters.
+> Both UI (HACS/config flow) and YAML configuration are supported for creating single entity proxies with optional utility meters.

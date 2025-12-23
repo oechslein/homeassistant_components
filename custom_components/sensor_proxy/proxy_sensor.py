@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Optional, Tuple
+from typing import Iterable, Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -39,7 +39,6 @@ class SensorProxySensor(SensorEntity):
         utility_meter_types: Optional[Iterable[str]] = None,
         utility_name_template: Optional[str] = None,
         utility_unique_id_template: Optional[str] = None,
-        glob_listener_key: Optional[Tuple[Any, ...]] = None,
     ) -> None:
         self._hass = hass
         self._attr_name = name
@@ -52,8 +51,6 @@ class SensorProxySensor(SensorEntity):
         self._utility_name_template = utility_name_template
         self._utility_unique_id_template = utility_unique_id_template
         self._created_meter_entities: list[tuple[str, str | None]] = []
-        self._glob_listener_key = glob_listener_key
-        self._glob_listener_attached = False
 
         # Default HA entity attributes; ensure they exist even if the source
         # entity is missing at initialization to avoid AttributeError on access.
@@ -71,7 +68,6 @@ class SensorProxySensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._claim_glob_listener()
 
         if self._device_id:
             entity_registry = er.async_get(self.hass)
@@ -122,7 +118,6 @@ class SensorProxySensor(SensorEntity):
             self._unsub()
             self._unsub = None
         await self._async_cleanup_created_meters()
-        self._release_glob_listener()
 
     def _copy_source_attributes(self, source_state) -> None:
         prev_available = self._attr_available
@@ -308,51 +303,3 @@ class SensorProxySensor(SensorEntity):
             if unique_id and unique_id in created:
                 created.pop(unique_id)
         self._created_meter_entities.clear()
-
-    def _claim_glob_listener(self) -> None:
-        if not self._glob_listener_key or self._glob_listener_attached:
-            return
-        domain = self._hass.data.get(DOMAIN_CONST, {})
-        store = domain.get("glob_listeners")
-        if not store:
-            return
-        entry = store.get(self._glob_listener_key)
-        if not entry:
-            return
-        entry["refcount"] = entry.get("refcount", 0) + 1
-        self._glob_listener_attached = True
-
-    def _release_glob_listener(self) -> None:
-        if not self._glob_listener_key or not self._glob_listener_attached:
-            return
-        domain = self._hass.data.get(DOMAIN_CONST, {})
-        store = domain.get("glob_listeners")
-        if not store or self._glob_listener_key not in store:
-            self._glob_listener_attached = False
-            return
-        entry = store[self._glob_listener_key]
-        entry["refcount"] = max(0, entry.get("refcount", 1) - 1)
-        _LOGGER.debug(
-            "Released glob listener: key=%s new_refcount=%d",
-            self._glob_listener_key,
-            entry.get("refcount", 0),
-        )
-        if entry["refcount"] > 0:
-            self._glob_listener_attached = False
-            return
-        _LOGGER.debug("Removing glob listener key: %s", self._glob_listener_key)
-        store.pop(self._glob_listener_key, None)
-        active_keys = domain.get("glob_listener_active_keys")
-        if active_keys and self._glob_listener_key in active_keys:
-            active_keys.discard(self._glob_listener_key)
-        unsub = entry.get("unsubscribe")
-        if unsub:
-            bus_list = domain.get("bus_listeners", [])
-            if unsub in bus_list:
-                bus_list.remove(unsub)
-            _LOGGER.debug(
-                "Unsubscribing glob listener callback for key: %s",
-                self._glob_listener_key,
-            )
-            unsub()
-        self._glob_listener_attached = False

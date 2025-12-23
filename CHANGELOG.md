@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 - 2025-12-23
+
+- **Breaking Change**: Removed glob pattern functionality (`source_entity_glob`, `name_template`, `unique_id_template`, `include_patterns`, `exclude_patterns`) to significantly reduce code complexity. The integration now only supports single entity proxies with optional utility meters. If you need to create multiple proxy sensors, configure them individually in YAML. ✅
+- **Removed**: All glob-related helper functions and entity tracking infrastructure ✅
+- **Simplified**: Core codebase now focuses exclusively on single-entity proxy with utility meter support ✅
+
 ## 1.0.19 - 2025-12-23
 
 - **Performance**: Major optimization - eliminated global `EVENT_STATE_CHANGED` listener that processed every entity state change in Home Assistant. Now uses targeted state change listeners only for matching entities. ✅

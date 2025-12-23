@@ -1,5 +1,4 @@
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
@@ -26,21 +25,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     # Keep track of created utility meters for cleanup/bookkeeping
     hass.data[DOMAIN].setdefault("created_utility_meters", {})
-    hass.data[DOMAIN].setdefault("bus_listeners", [])
-    hass.data[DOMAIN].setdefault("glob_listeners", {})
-    hass.data[DOMAIN].setdefault("glob_listener_active_keys", set())
-    hass.data[DOMAIN].setdefault("glob_listener_cleanup_handle", None)
-
-    async def _cleanup_listeners(event):
-        listeners = hass.data[DOMAIN]["bus_listeners"]
-        for unsub in list(listeners):
-            unsub()
-        listeners.clear()
-        hass.data[DOMAIN]["glob_listeners"].clear()
-        hass.data[DOMAIN]["glob_listener_active_keys"].clear()
-        hass.data[DOMAIN]["glob_listener_cleanup_handle"] = None
-
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cleanup_listeners)
 
     return True
 
