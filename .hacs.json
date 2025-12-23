@@ -3,6 +3,6 @@
   "content_in_root": false,
   "domains": ["sensor_proxy"],
   "type": "integration",
-  "version": "1.0.17",
+  "version": "1.0.19",
   "homeassistant": "2023.8.0"
 }

@@ -1,11 +1,15 @@
 # Changelog
 
-## 1.0.18 - 2025-12-23
+## 1.0.19 - 2025-12-23
 
 - **Performance**: Major optimization - eliminated global `EVENT_STATE_CHANGED` listener that processed every entity state change in Home Assistant. Now uses targeted state change listeners only for matching entities. ✅
 - **Change**: Glob patterns now require explicit domain (e.g., `sensor.original_*` instead of `*.original_*`) for performance optimization and clarity. Patterns with wildcarded domains will be rejected with a warning. ✅
 - **Feature**: Proxies for glob-matched entities are now created immediately at startup based on entity registry query, rather than lazily on first state change. ✅
 - **Feature**: New entities matching glob patterns are detected via entity registry event subscription instead of periodic polling, providing immediate response to newly added entities. ✅
+
+## 1.0.18 - 2025-12-21
+
+Fix: pass unique_id when building virtual utility meters to avoid missing required arg in UtilityMeterSensor
 
 ## 1.0.17 - 2025-12-21
 
