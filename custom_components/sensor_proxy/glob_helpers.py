@@ -43,8 +43,8 @@ def extract_domain_from_glob(glob_pattern: str) -> str | None:
     # Domain must not contain wildcards
     if "*" in domain or "?" in domain or "[" in domain:
         _LOGGER.warning(
-            "Glob pattern '%s' has wildcarded domain. "
-            "Please use explicit domain (e.g., 'sensor.original_*')",
+            "Glob pattern '%s' has wildcarded domain and will be rejected. "
+            "Please use explicit domain (e.g., 'sensor.original_*') for proper operation.",
             glob_pattern,
         )
         return None
