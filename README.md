@@ -27,6 +27,7 @@ sensor:
 
     # Glob: create proxies for multiple matching entities
     # `*` in templates is replaced with the object_id (part after the dot)
+    # NOTE: Domain (e.g., 'sensor.') must be explicit (not wildcarded) for performance optimization
   - platform: sensor_proxy
     source_entity_glob: "sensor.original_*"
     name_template: "copy_*"
