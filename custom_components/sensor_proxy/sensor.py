@@ -174,6 +174,9 @@ async def async_setup_platform(
 
             # Listen for entity registry changes (new entities and removed entities)
             # This handles entities that are added or removed after startup
+            # Note: We use hass.bus.async_listen instead of async_track_entity_registry_updated_event
+            # because we need to discover NEW entities matching the glob pattern (which don't
+            # exist yet), not track specific known entity_ids.
             registry = er.async_get(hass)
             
             @callback
