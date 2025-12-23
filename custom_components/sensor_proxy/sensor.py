@@ -127,6 +127,9 @@ async def async_setup_platform(
             )
 
             # Create proxies for all matching entities immediately
+            # Note: Each SensorProxySensor sets up its own targeted state change listener
+            # in async_added_to_hass() via async_track_state_change_event(), so we no longer
+            # need a global listener that processes all entity state changes.
             registry = er.async_get(hass)
             for entity_id in matching_entity_ids:
                 state = hass.states.get(entity_id)
