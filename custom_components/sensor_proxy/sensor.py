@@ -174,6 +174,8 @@ async def async_setup_platform(
 
             # Listen for new entities being added to the registry
             # This handles entities that are added after startup
+            registry = er.async_get(hass)
+            
             @callback
             def _on_entity_registry_updated(event: er.Event) -> None:
                 """Handle entity registry updates for new matching entities."""
@@ -202,7 +204,6 @@ async def async_setup_platform(
                 if unique_id in created_unique_ids:
                     return
                 
-                registry = er.async_get(hass)
                 existing_eid = registry.async_get_entity_id(
                     domain="sensor", platform="sensor_proxy", unique_id=unique_id
                 )
