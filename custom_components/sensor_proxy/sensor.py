@@ -1,11 +1,12 @@
-import fnmatch
 import logging
+from datetime import timedelta
 from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_track_time_interval
 
 from .config import build_utility_options
 from .const import DOMAIN as DOMAIN_CONST
@@ -21,6 +22,9 @@ from .proxy_sensor import SensorProxySensor
 from .schema import PLATFORM_SCHEMA  # noqa: F401 - re-exported for HA
 
 _LOGGER = logging.getLogger(__name__)
+
+# Interval for checking new entities matching glob patterns (in seconds)
+GLOB_ENTITY_CHECK_INTERVAL = 60
 
 
 async def async_setup_platform(
@@ -171,8 +175,6 @@ async def async_setup_platform(
 
             # Set up periodic check for new matching entities (registry changes)
             # This handles entities that are added after startup
-            from homeassistant.helpers.event import async_track_time_interval
-            from datetime import timedelta
             
             async def _check_new_entities(_now):
                 """Periodically check for new entities matching the glob pattern."""
@@ -246,9 +248,9 @@ async def async_setup_platform(
                     # Update stored matching entities
                     listener_entry["matching_entities"] = set(current_matching)
             
-            # Check for new entities every 60 seconds
+            # Check for new entities every GLOB_ENTITY_CHECK_INTERVAL seconds
             unsubscribe = async_track_time_interval(
-                hass, _check_new_entities, timedelta(seconds=60)
+                hass, _check_new_entities, timedelta(seconds=GLOB_ENTITY_CHECK_INTERVAL)
             )
             listener_entry["unsubscribe"] = unsubscribe
             bus_listeners.append(unsubscribe)
