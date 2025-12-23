@@ -3,7 +3,7 @@ import logging
 from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID, EVENT_STATE_CHANGED
+from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
@@ -11,6 +11,8 @@ from .config import build_utility_options
 from .const import DOMAIN as DOMAIN_CONST
 from .glob_helpers import (
     build_glob_listener_key,
+    extract_domain_from_glob,
+    get_matching_entity_ids,
     matches_patterns,
     render_template,
     schedule_glob_listener_cleanup,
@@ -57,7 +59,7 @@ async def async_setup_platform(
             )
         )
 
-    # If glob pattern provided, expand existing states and listen for new ones.
+    # If glob pattern provided, create proxies for all matching entities immediately.
     source_glob = config.get("source_entity_glob")
     if source_glob:
         name_template = config.get("name_template", "copy_*")
@@ -67,204 +69,189 @@ async def async_setup_platform(
         # Track created unique_ids to avoid duplicates
         created_unique_ids = set()
 
-        # initial scan
+        # Get patterns for filtering
         include_patterns = config.get("include_patterns") or []
         exclude_patterns = config.get("exclude_patterns") or []
-        listener_key = build_glob_listener_key(
-            source_glob,
-            include_patterns,
-            exclude_patterns,
-            name_template,
-            unique_template,
-            utility_options.create,
-            utility_options.meter_types,
-            utility_options.name_template,
-            utility_options.unique_id_template,
-            device_id,
-        )
+        
+        # Validate that glob pattern has explicit domain
+        domain = extract_domain_from_glob(source_glob)
+        if not domain:
+            _LOGGER.error(
+                "Glob pattern '%s' must have explicit domain (e.g., 'sensor.original_*'). "
+                "Skipping glob configuration.",
+                source_glob,
+            )
+        else:
+            listener_key = build_glob_listener_key(
+                source_glob,
+                include_patterns,
+                exclude_patterns,
+                name_template,
+                unique_template,
+                utility_options.create,
+                utility_options.meter_types,
+                utility_options.name_template,
+                utility_options.unique_id_template,
+                device_id,
+            )
 
-        listener_entry = glob_listener_store.setdefault(
-            listener_key, {"unsubscribe": None, "refcount": 0}
-        )
-        old_unsub = listener_entry.get("unsubscribe")
-        if old_unsub:
-            old_unsub()
-            if old_unsub in bus_listeners:
-                bus_listeners.remove(old_unsub)
-        listener_entry["unsubscribe"] = None
-        listener_entry.setdefault("refcount", 0)
-        glob_active_keys.add(listener_key)
+            listener_entry = glob_listener_store.setdefault(
+                listener_key, {"unsubscribe": None, "refcount": 0, "matching_entities": set()}
+            )
+            old_unsub = listener_entry.get("unsubscribe")
+            if old_unsub:
+                old_unsub()
+                if old_unsub in bus_listeners:
+                    bus_listeners.remove(old_unsub)
+            listener_entry["unsubscribe"] = None
+            listener_entry.setdefault("refcount", 0)
+            listener_entry.setdefault("matching_entities", set())
+            glob_active_keys.add(listener_key)
 
-        for state in hass.states.async_all():
-            if not fnmatch.fnmatchcase(state.entity_id, source_glob):
-                continue
-            # Skip sources that are unavailable/unknown — create proxies only for available sources
-            if state.state in ("unavailable", "unknown"):
-                _LOGGER.debug(
-                    "Glob skip (source not available): entity_id=%s state=%s",
-                    state.entity_id,
-                    state.state,
+            # Get all matching entities from registry (not just current states)
+            matching_entity_ids = get_matching_entity_ids(
+                hass, source_glob, include_patterns, exclude_patterns
+            )
+            
+            # Store matching entities in listener entry for future reference
+            listener_entry["matching_entities"].update(matching_entity_ids)
+            
+            _LOGGER.info(
+                "Creating proxies for %d matching entities (glob='%s')",
+                len(matching_entity_ids),
+                source_glob,
+            )
+
+            # Create proxies for all matching entities immediately
+            registry = er.async_get(hass)
+            for entity_id in matching_entity_ids:
+                state = hass.states.get(entity_id)
+                
+                # Skip sources that are unavailable/unknown at startup
+                if state and state.state in ("unavailable", "unknown"):
+                    _LOGGER.debug(
+                        "Glob skip (source not available): entity_id=%s state=%s",
+                        entity_id,
+                        state.state,
+                    )
+                    continue
+
+                unique_id = render_template(unique_template, entity_id)
+                
+                # Skip if registry already has this unique_id
+                existing_eid = registry.async_get_entity_id(
+                    domain="sensor", platform="sensor_proxy", unique_id=unique_id
                 )
-                continue
-            object_id = state.entity_id.split(".", 1)[1]
-            if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                continue
-
-            unique_id = render_template(unique_template, state.entity_id)
-            # Skip if registry already has this unique_id
-            registry = er.async_get(hass)
-            existing_eid = registry.async_get_entity_id(
-                domain="sensor", platform="sensor_proxy", unique_id=unique_id
-            )
-            if existing_eid:
-                _LOGGER.debug("Skipping existing proxy for unique_id %s", unique_id)
-                created_unique_ids.add(unique_id)
-                continue
-
-            name = render_template(name_template, state.entity_id)
-            entity = SensorProxySensor(
-                hass,
-                name,
-                state.entity_id,
-                unique_id,
-                device_id,
-                create_utility_meters=utility_options.create,
-                utility_meter_types=list(utility_options.meter_types),
-                utility_name_template=utility_options.name_template,
-                utility_unique_id_template=utility_options.unique_id_template,
-                glob_listener_key=listener_key,
-            )
-            _LOGGER.debug(
-                "Scheduling creation of proxy (initial scan): source=%s name=%s unique_id=%s",
-                state.entity_id,
-                name,
-                unique_id,
-            )
-            entities.append(entity)
-            created_unique_ids.add(unique_id)
-
-        # subscribe to future state changes to create proxies lazily
-        @callback
-        def _on_state_changed(
-            event,
-            source_glob=source_glob,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
-            name_template=name_template,
-            unique_template=unique_template,
-            listener_key=listener_key,
-            created_unique_ids=created_unique_ids,
-            device_id=device_id,
-            utility_options=utility_options,
-        ):
-            data = event.data
-            entity_id = data.get("entity_id")
-            if not entity_id:
-                return
-            new_state = data.get("new_state")
-
-            # First ensure this event is for a matching source; ignore unrelated entity events
-            if not fnmatch.fnmatchcase(entity_id, source_glob):
-                return
-            # Only create proxies when the source has a valid state (available)
-            if new_state is None or new_state.state in ("unavailable", "unknown"):
-                return
-            object_id = entity_id.split(".", 1)[1]
-            if not matches_patterns(object_id, include_patterns, exclude_patterns):
-                return
-            # create proxy if not already created
-            unique_id = render_template(unique_template, entity_id)
-            if unique_id in created_unique_ids:
-                return
-            registry = er.async_get(hass)
-            existing_eid = registry.async_get_entity_id(
-                domain="sensor", platform="sensor_proxy", unique_id=unique_id
-            )
-            if existing_eid:
-                existing_state = hass.states.get(existing_eid)
-                # If registry has an entry but there's no active entity, create one now
-                if existing_state is None:
-                    _LOGGER.debug(
-                        "Registry has %s for unique_id %s but no active entity; creating instance",
-                        existing_eid,
-                        unique_id,
-                    )
-                    name = render_template(name_template, entity_id)
-                    entity = SensorProxySensor(
-                        hass,
-                        name,
-                        entity_id,
-                        unique_id,
-                        device_id,
-                        create_utility_meters=utility_options.create,
-                        utility_meter_types=list(utility_options.meter_types),
-                        utility_name_template=utility_options.name_template,
-                        utility_unique_id_template=utility_options.unique_id_template,
-                        glob_listener_key=listener_key,
-                    )
-                    async_add_entities([entity])
+                if existing_eid:
+                    _LOGGER.debug("Skipping existing proxy for unique_id %s", unique_id)
                     created_unique_ids.add(unique_id)
-                    return
+                    continue
 
-                # If the entity exists but is unavailable/unknown, request an update
-                if existing_state.state in ("unavailable", "unknown"):
-                    _LOGGER.debug(
-                        "Found restored proxy %s for unique_id %s; requesting update",
-                        existing_eid,
-                        unique_id,
-                    )
-                    hass.async_create_task(
-                        hass.services.async_call(
-                            "homeassistant",
-                            "update_entity",
-                            {"entity_id": existing_eid},
-                        )
-                    )
+                name = render_template(name_template, entity_id)
+                entity = SensorProxySensor(
+                    hass,
+                    name,
+                    entity_id,
+                    unique_id,
+                    device_id,
+                    create_utility_meters=utility_options.create,
+                    utility_meter_types=list(utility_options.meter_types),
+                    utility_name_template=utility_options.name_template,
+                    utility_unique_id_template=utility_options.unique_id_template,
+                    glob_listener_key=listener_key,
+                )
+                _LOGGER.debug(
+                    "Scheduling creation of proxy (initial scan): source=%s name=%s unique_id=%s",
+                    entity_id,
+                    name,
+                    unique_id,
+                )
+                entities.append(entity)
                 created_unique_ids.add(unique_id)
-                return
-            name = render_template(name_template, entity_id)
-            entity = SensorProxySensor(
-                hass,
-                name,
-                entity_id,
-                unique_id,
-                device_id,
-                create_utility_meters=utility_options.create,
-                utility_meter_types=list(utility_options.meter_types),
-                utility_name_template=utility_options.name_template,
-                utility_unique_id_template=utility_options.unique_id_template,
-                glob_listener_key=listener_key,
-            )
 
-            # If the event included the new state, initialize the proxy from it
-            new_state = data.get("new_state")
-            if new_state is not None:
-                try:
-                    entity._copy_source_attributes(new_state)
-                    _LOGGER.debug(
-                        "Initialized proxy from event state: source=%s name=%s unique_id=%s state=%s",
-                        entity_id,
-                        name,
-                        unique_id,
-                        new_state.state,
+            # Set up periodic check for new matching entities (registry changes)
+            # This handles entities that are added after startup
+            from homeassistant.helpers.event import async_track_time_interval
+            from datetime import timedelta
+            
+            async def _check_new_entities(_now):
+                """Periodically check for new entities matching the glob pattern."""
+                # Get current matching entities
+                current_matching = get_matching_entity_ids(
+                    hass, source_glob, include_patterns, exclude_patterns
+                )
+                
+                # Find new entities that weren't there before
+                previous_matching = listener_entry.get("matching_entities", set())
+                new_entities = set(current_matching) - previous_matching
+                
+                if new_entities:
+                    _LOGGER.info(
+                        "Found %d new entities matching glob '%s': %s",
+                        len(new_entities),
+                        source_glob,
+                        new_entities,
                     )
-                except Exception:  # Defensive: do not let a copy failure break creation
-                    _LOGGER.exception(
-                        "Failed to initialize proxy from event state for %s", entity_id
-                    )
-
-            _LOGGER.debug(
-                "Creating proxy (event): source=%s name=%s unique_id=%s",
-                entity_id,
-                name,
-                unique_id,
+                    
+                    # Create proxies for new entities
+                    new_proxy_entities = []
+                    registry = er.async_get(hass)
+                    
+                    for entity_id in new_entities:
+                        state = hass.states.get(entity_id)
+                        
+                        # Skip if not available
+                        if not state or state.state in ("unavailable", "unknown"):
+                            continue
+                        
+                        unique_id = render_template(unique_template, entity_id)
+                        
+                        # Skip if already exists
+                        if unique_id in created_unique_ids:
+                            continue
+                            
+                        existing_eid = registry.async_get_entity_id(
+                            domain="sensor", platform="sensor_proxy", unique_id=unique_id
+                        )
+                        if existing_eid:
+                            created_unique_ids.add(unique_id)
+                            continue
+                        
+                        name = render_template(name_template, entity_id)
+                        entity = SensorProxySensor(
+                            hass,
+                            name,
+                            entity_id,
+                            unique_id,
+                            device_id,
+                            create_utility_meters=utility_options.create,
+                            utility_meter_types=list(utility_options.meter_types),
+                            utility_name_template=utility_options.name_template,
+                            utility_unique_id_template=utility_options.unique_id_template,
+                            glob_listener_key=listener_key,
+                        )
+                        new_proxy_entities.append(entity)
+                        created_unique_ids.add(unique_id)
+                        
+                        _LOGGER.debug(
+                            "Creating proxy for new entity: source=%s name=%s unique_id=%s",
+                            entity_id,
+                            name,
+                            unique_id,
+                        )
+                    
+                    if new_proxy_entities:
+                        async_add_entities(new_proxy_entities)
+                    
+                    # Update stored matching entities
+                    listener_entry["matching_entities"] = set(current_matching)
+            
+            # Check for new entities every 60 seconds
+            unsubscribe = async_track_time_interval(
+                hass, _check_new_entities, timedelta(seconds=60)
             )
-            async_add_entities([entity])
-            created_unique_ids.add(unique_id)
-
-        unsubscribe = hass.bus.async_listen(EVENT_STATE_CHANGED, _on_state_changed)
-        listener_entry["unsubscribe"] = unsubscribe
-        bus_listeners.append(unsubscribe)
+            listener_entry["unsubscribe"] = unsubscribe
+            bus_listeners.append(unsubscribe)
 
     if entities:
         async_add_entities(entities)

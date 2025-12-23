@@ -14,10 +14,101 @@ _LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "build_glob_listener_key",
+    "extract_domain_from_glob",
+    "get_matching_entity_ids",
     "matches_patterns",
     "render_template",
     "schedule_glob_listener_cleanup",
 ]
+
+
+def extract_domain_from_glob(glob_pattern: str) -> str | None:
+    """Extract the domain from a glob pattern.
+    
+    Requires the domain to be explicit (not a wildcard).
+    Examples:
+        "sensor.original_*" -> "sensor"
+        "*.original" -> None (domain is wildcarded, not allowed)
+        "sensor.*" -> "sensor"
+    
+    Returns None if domain cannot be determined or is wildcarded.
+    """
+    if not glob_pattern or "." not in glob_pattern:
+        return None
+    
+    parts = glob_pattern.split(".", 1)
+    domain = parts[0]
+    
+    # Domain must not contain wildcards
+    if "*" in domain or "?" in domain or "[" in domain:
+        _LOGGER.warning(
+            "Glob pattern '%s' has wildcarded domain. "
+            "Please use explicit domain (e.g., 'sensor.original_*')",
+            glob_pattern,
+        )
+        return None
+    
+    return domain
+
+
+def get_matching_entity_ids(
+    hass: HomeAssistant,
+    source_glob: str,
+    include_patterns: Iterable[str] | None = None,
+    exclude_patterns: Iterable[str] | None = None,
+) -> list[str]:
+    """Get all entity IDs from registry that match the glob pattern and filters.
+    
+    Args:
+        hass: HomeAssistant instance
+        source_glob: Glob pattern for entity IDs (must have explicit domain)
+        include_patterns: Optional patterns to include (applied to object_id)
+        exclude_patterns: Optional patterns to exclude (applied to object_id)
+    
+    Returns:
+        List of matching entity_ids
+    """
+    from homeassistant.helpers import entity_registry as er
+    
+    # Extract domain from glob pattern
+    domain = extract_domain_from_glob(source_glob)
+    if not domain:
+        _LOGGER.error(
+            "Cannot extract domain from glob pattern '%s'. "
+            "Use explicit domain like 'sensor.original_*'",
+            source_glob,
+        )
+        return []
+    
+    registry = er.async_get(hass)
+    matching_entities = []
+    
+    # Get all entities for the domain
+    for entity_entry in registry.entities.values():
+        if entity_entry.domain != domain:
+            continue
+        
+        entity_id = entity_entry.entity_id
+        
+        # Check if entity_id matches the glob pattern
+        if not fnmatch.fnmatchcase(entity_id, source_glob):
+            continue
+        
+        # Extract object_id and check include/exclude patterns
+        object_id = entity_id.split(".", 1)[1]
+        if not matches_patterns(object_id, include_patterns, exclude_patterns):
+            continue
+        
+        matching_entities.append(entity_id)
+    
+    _LOGGER.debug(
+        "Found %d matching entities for glob '%s' in domain '%s'",
+        len(matching_entities),
+        source_glob,
+        domain,
+    )
+    
+    return matching_entities
 
 
 def render_template(template: str | None, entity_id: str) -> str:
