@@ -174,15 +174,13 @@ async def async_setup_platform(
 
             # Listen for new entities being added to the registry
             # This handles entities that are added after startup
-            registry = er.async_get(hass)
-            
             @callback
-            def _on_entity_registry_updated(
-                action: str, data: dict[str, Any]
-            ) -> None:
+            def _on_entity_registry_updated(event: er.Event) -> None:
                 """Handle entity registry updates for new matching entities."""
+                data = event.data
+                
                 # Only process "create" events (new entities)
-                if action != "create":
+                if data.get("action") != "create":
                     return
                 
                 entity_id = data.get("entity_id")
@@ -204,6 +202,7 @@ async def async_setup_platform(
                 if unique_id in created_unique_ids:
                     return
                 
+                registry = er.async_get(hass)
                 existing_eid = registry.async_get_entity_id(
                     domain="sensor", platform="sensor_proxy", unique_id=unique_id
                 )
@@ -238,8 +237,10 @@ async def async_setup_platform(
                 created_unique_ids.add(unique_id)
                 listener_entry["matching_entities"].add(entity_id)
             
-            # Subscribe to entity registry updates
-            unsubscribe = registry.async_subscribe(_on_entity_registry_updated)
+            # Subscribe to entity registry updates via event bus
+            unsubscribe = hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED, _on_entity_registry_updated
+            )
             listener_entry["unsubscribe"] = unsubscribe
             bus_listeners.append(unsubscribe)
 
