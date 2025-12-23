@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,8 +69,6 @@ def get_matching_entity_ids(
     Returns:
         List of matching entity_ids
     """
-    from homeassistant.helpers import entity_registry as er
-    
     # Extract domain from glob pattern
     domain = extract_domain_from_glob(source_glob)
     if not domain:
