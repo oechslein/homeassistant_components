@@ -35,7 +35,7 @@ class SensorProxySensor(SensorEntity):
         source_entity_id: str,
         unique_id: Optional[str],
         device_id: Optional[str] = None,
-        create_utility_meters: bool = False,
+        create_utility_meters: Optional[bool] = None,
         utility_meter_types: Optional[Iterable[str]] = None,
         utility_name_template: Optional[str] = None,
         utility_unique_id_template: Optional[str] = None,
@@ -46,7 +46,7 @@ class SensorProxySensor(SensorEntity):
         self._source_entity_id = source_entity_id
         self._device_id = device_id
         self._unsub: Optional[Callable[[], None]] = None
-        self._create_utility_meters = create_utility_meters
+        self._create_utility_meters = create_utility_meters  # None = use global default
         self._utility_meter_types = utility_meter_types
         self._utility_name_template = utility_name_template
         self._utility_unique_id_template = utility_unique_id_template
@@ -165,15 +165,13 @@ class SensorProxySensor(SensorEntity):
                 self._source_entity_id,
                 self._attr_native_value,
             )
+            # Write state to ensure unit is available before creating utility meters
+            self.async_write_ha_state()
             # Create utility meters once when first initialized
-            if self._create_utility_meters and not self._utility_meters_created:
-                self._utility_meters_created = True
-                # Schedule async task from sync callback
-                self._hass.async_create_task(self._async_create_utility_meters())
+            self._schedule_utility_meter_creation()
 
     @callback
     def _async_source_changed(self, entity_id, old_state, new_state) -> None:
-
         if new_state is None:
             self._attr_native_value = None
             self._attr_extra_state_attributes = {}
@@ -194,6 +192,25 @@ class SensorProxySensor(SensorEntity):
         source_state = self._hass.states.get(self._source_entity_id)
         if source_state:
             self._copy_source_attributes(source_state)
+
+    def _schedule_utility_meter_creation(self) -> None:
+        """Schedule utility meter creation if configured and not already created."""
+        if self._utility_meters_created:
+            return
+
+        # Resolve explicit setting or fall back to global default
+        should_create = self._create_utility_meters or (
+            self._create_utility_meters is None
+            and self._hass.data.get(DOMAIN_CONST, {}).get(
+                "create_utility_meters", False
+            )
+        )
+
+        if not should_create:
+            return
+
+        self._utility_meters_created = True
+        self._hass.async_create_task(self._async_create_utility_meters())
 
     async def _async_create_utility_meters(self) -> None:
         platform = self.platform
@@ -253,14 +270,16 @@ class SensorProxySensor(SensorEntity):
             state_class
             not in (SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING)
         ) or (device_class != SensorDeviceClass.ENERGY):
-            _LOGGER.info(
-                "Skipping utility meter creation for %s: source %s has state_class=%s, device_class=%s "
-                "(requires state_class=total/total_increasing and device_class=energy)",
-                self.entity_id,
-                self._source_entity_id,
-                state_class,
-                device_class,
-            )
+            # Only log if utility meters were explicitly enabled for this entity
+            if self._create_utility_meters is not None:
+                _LOGGER.info(
+                    "Skipping utility meter creation for %s: source %s has state_class=%s, device_class=%s "
+                    "(requires state_class=total/total_increasing and device_class=energy)",
+                    self.entity_id,
+                    self._source_entity_id,
+                    state_class,
+                    device_class,
+                )
             return
 
         meters_to_add = []

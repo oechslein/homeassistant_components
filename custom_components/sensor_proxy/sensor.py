@@ -5,8 +5,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from homeassistant.core import HomeAssistant
 
-from .config import build_utility_options
-from .const import DOMAIN as DOMAIN_CONST
 from .proxy_sensor import SensorProxySensor
 from .schema import PLATFORM_SCHEMA  # noqa: F401 - re-exported for HA
 
@@ -21,16 +19,18 @@ async def async_setup_platform(
 ) -> None:
     """Set up proxy sensors."""
     device_id = config.get("device_id")
-    domain_data = hass.data.setdefault(DOMAIN_CONST, {})
 
     entities = []
 
-    # Single entity configuration
-    source_entity_id = config.get("source_entity_id")
-    if source_entity_id:
+    # Check which configuration format is being used
+    if "source_entity_id" in config:
+        # Single entity configuration (legacy format)
+        source_entity_id = config["source_entity_id"]
         new_unique_id = config.get(CONF_UNIQUE_ID)
         name = config.get(CONF_NAME)
-        utility_options = build_utility_options(config, domain_data)
+        # Pass explicit value if set, otherwise None to use global default
+        create_utility_meters = config.get("create_utility_meters")
+        utility_meter_types = config.get("utility_meter_types")
         entities.append(
             SensorProxySensor(
                 hass,
@@ -38,12 +38,55 @@ async def async_setup_platform(
                 source_entity_id,
                 new_unique_id,
                 device_id,
-                create_utility_meters=utility_options.create,
-                utility_meter_types=list(utility_options.meter_types),
-                utility_name_template=utility_options.name_template,
-                utility_unique_id_template=utility_options.unique_id_template,
+                create_utility_meters=create_utility_meters,
+                utility_meter_types=utility_meter_types,
+                utility_name_template=config.get("utility_name_template"),
+                utility_unique_id_template=config.get("utility_unique_id_template"),
             )
         )
+    elif "source_base" in config:
+        # Multi-entity configuration (new compact format)
+        source_base = config["source_base"]
+        name_base = config["name_base"]
+        unique_id_base = config.get("unique_id_base")
+        sensors_list = config["sensors"]
+
+        for sensor_config in sensors_list:
+            suffix = sensor_config["suffix"]
+
+            # Build source_entity_id from base + suffix
+            source_entity_id = f"{source_base}_{suffix}"
+
+            # Use per-sensor name if provided, otherwise generate from name_base
+            name = sensor_config.get(CONF_NAME) or f"{name_base}_{suffix}"
+
+            # Use per-sensor unique_id if provided, otherwise generate from unique_id_base
+            if CONF_UNIQUE_ID in sensor_config:
+                new_unique_id = sensor_config[CONF_UNIQUE_ID]
+            elif unique_id_base:
+                new_unique_id = f"{unique_id_base}_{suffix}"
+            else:
+                new_unique_id = None
+
+            # Pass explicit value if set in sensor config, otherwise None
+            create_utility_meters = sensor_config.get("create_utility_meters")
+            utility_meter_types = sensor_config.get("utility_meter_types")
+
+            entities.append(
+                SensorProxySensor(
+                    hass,
+                    name,
+                    source_entity_id,
+                    new_unique_id,
+                    device_id,
+                    create_utility_meters=create_utility_meters,
+                    utility_meter_types=utility_meter_types,
+                    utility_name_template=sensor_config.get("utility_name_template"),
+                    utility_unique_id_template=sensor_config.get(
+                        "utility_unique_id_template"
+                    ),
+                )
+            )
 
     if entities:
         async_add_entities(entities)

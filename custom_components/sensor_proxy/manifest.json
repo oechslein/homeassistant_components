@@ -1,7 +1,7 @@
 {
   "domain": "sensor_proxy",
   "name": "Sensor Proxy",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "documentation": "https://github.com/oechslein/homeassistant_components",
   "description": "Clones sensor states/attributes with custom names and device binding. Supports optional utility meter creation for energy sensors.",
   "issue_tracker": "https://github.com/oechslein/homeassistant_components/issues",

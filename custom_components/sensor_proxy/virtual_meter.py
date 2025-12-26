@@ -71,9 +71,10 @@ def build_virtual_meter_entity(
     meter_entity_id = async_generate_entity_id(
         "sensor.{}", desired_object_id, hass=hass
     )
+    # Utility meters must track the proxy entity, not the original source
     params: dict[str, Any] = {
         "hass": hass,
-        "source_entity": source_entity_id,
+        "source_entity": parent_entity_id,  # Track the proxy, not the original source
         "name": meter_name,
         "meter_type": meter_type,
         "meter_offset": DEFAULT_OFFSET,
@@ -92,7 +93,7 @@ def build_virtual_meter_entity(
 
     # Debug output for created virtual meter
     _LOGGER.debug(
-        "Built virtual utility meter: name=%s entity_id=%s unique_id=%s meter_type=%s parent=%s",
+        "Built virtual utility meter: name=%s entity_id=%s unique_id=%s meter_type=%s source=%s",
         params.get("name"),
         meter_entity_id,
         params.get("unique_id"),

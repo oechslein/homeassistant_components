@@ -8,6 +8,7 @@ Clones sensor states/attributes with custom names and device binding. Perfect re
 - Inherits unit/device_class/state_class/icon
 - Optional device binding or device reuse via entity registry
 - Optional utility meters for energy sensors
+- **Multi-entity compact format** for creating multiple related proxies in one config block
 
 > **Note:** Both UI config flow and YAML configuration are supported for creating single entity proxies with optional utility meters.
 
@@ -18,12 +19,25 @@ Clones sensor states/attributes with custom names and device binding. Perfect re
 
 ```yaml
 sensor:
+  # Single entity (simple format)
   - platform: sensor_proxy
     source_entity_id: sensor.original
     unique_id: my_copy
     name: "My Copy"
     # Optional: bind to a specific device
     device_id: "your_device_id_here"
+
+  # Multi-entity (compact format) - NEW!
+  - platform: sensor_proxy
+    source_base: "sensor.refoss_3"
+    name_base: "copy_refoss_3"
+    unique_id_base: "copy_refoss_3"  # Optional
+    sensors:
+      - suffix: "power"
+      - suffix: "energy"
+        create_utility_meters: true
+      - suffix: "voltage"
+        name: "Custom Voltage Name"  # Override auto-generated name
 
 
 ## Utility meters (optional, per-proxy support)
@@ -119,6 +133,17 @@ sensor:
         - monthly
       utility_name_template: "copy_refoss_3_energy_{cycle}"
       utility_unique_id_template: "copy_refoss_3_energy_{cycle}"
+
+    # Multi-entity format (saves repetition)
+    - platform: sensor_proxy
+      source_base: "sensor.refoss_3"
+      name_base: "copy_refoss_3"
+      unique_id_base: "copy_refoss_3"
+      sensors:
+        - suffix: "power"
+        - suffix: "energy"
+          create_utility_meters: true
+          utility_meter_types: [daily, monthly]
   ```
 
   **Behavior notes:**

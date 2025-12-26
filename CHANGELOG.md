@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - 2025-12-24
+
+- **Feature**: Added multi-entity compact format for creating multiple related proxies in one configuration block ✅
+- **Enhancement**: Use `source_base` + `name_base` + `sensors` list to avoid repetitive YAML entries ✅
+- **Example**: Create power and energy proxies together: `source_base: "sensor.refoss_3"` with `sensors: [{suffix: "power"}, {suffix: "energy", create_utility_meters: true}]` ✅
+- **Backward Compatible**: Existing single-entity `source_entity_id` format continues to work ✅
+
 ## 1.1.1 - 2025-12-23
 
 - **Fix**: Utility meters now created after source entity becomes available, ensuring proper initialization timing ✅
