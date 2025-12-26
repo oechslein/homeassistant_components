@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.3 - 2025-12-26
+
+- **Fix**: Eliminated utility meter `_2` suffix issue by directly building entity_id instead of using `async_generate_entity_id()` ✅
+- **Enhancement**: Now follows powercalc's pattern for utility meter entity_id assignment - direct assignment lets entity registry handle conflicts properly ✅
+- **Enhancement**: Replaced manual delays with official `async_at_started()` pattern from `homeassistant.helpers.start` for proper startup synchronization ✅
+- **Impact**: Utility meters now have clean, predictable entity IDs without spurious suffixes, matching best practices from Home Assistant core and powercalc ✅
+
+## 1.2.2 - 2025-12-26
+
+- **Critical Fix**: Fixed utility meter registration causing KeyError when meters tried to access parent data structure ✅
+- **Fix**: Utility meters now properly registered in `hass.data[DATA_UTILITY]` with `DATA_TARIFF_SENSORS` list ✅  
+- **Fix**: Added cleanup of utility meter component registration when proxy is removed ✅
+- **Fix**: Added small delay before creating utility meters to ensure proxy state is fully propagated ✅
+- **Impact**: This fixes the "KeyError: 'sensor.copy_refoss_3_energy'" errors that occurred when utility meters updated ✅
+
 ## 1.2.1 - 2025-12-26
 
 - **Critical Fix**: Corrected schema validation error that prevented integration from loading on Home Assistant startup ✅

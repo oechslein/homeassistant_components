@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import slugify
 
 from .const import (
@@ -168,7 +169,27 @@ class SensorProxySensor(SensorEntity):
             # Write state to ensure unit is available before creating utility meters
             self.async_write_ha_state()
             # Create utility meters once when first initialized
-            self._schedule_utility_meter_creation()
+            # Check if we should create utility meters
+            should_create = self._create_utility_meters or (
+                self._create_utility_meters is None
+                and self._hass.data.get(DOMAIN_CONST, {}).get(
+                    "create_utility_meters", False
+                )
+            )
+            if should_create and not self._utility_meters_created:
+                self._utility_meters_created = True
+
+                # Use async_at_started to wait for Home Assistant to be fully ready
+                # This ensures the state machine is initialized and source entity state is available
+                # This is the official pattern used by utility_meter and other core components
+                @callback
+                def _create_meters_when_ready(_hass: HomeAssistant) -> None:
+                    """Create utility meters when Home Assistant is fully started."""
+                    self._hass.async_create_task(self._async_create_utility_meters())
+
+                self.async_on_remove(
+                    async_at_started(self._hass, _create_meters_when_ready)
+                )
 
     @callback
     def _async_source_changed(self, entity_id, old_state, new_state) -> None:
@@ -193,25 +214,6 @@ class SensorProxySensor(SensorEntity):
         if source_state:
             self._copy_source_attributes(source_state)
 
-    def _schedule_utility_meter_creation(self) -> None:
-        """Schedule utility meter creation if configured and not already created."""
-        if self._utility_meters_created:
-            return
-
-        # Resolve explicit setting or fall back to global default
-        should_create = self._create_utility_meters or (
-            self._create_utility_meters is None
-            and self._hass.data.get(DOMAIN_CONST, {}).get(
-                "create_utility_meters", False
-            )
-        )
-
-        if not should_create:
-            return
-
-        self._utility_meters_created = True
-        self._hass.async_create_task(self._async_create_utility_meters())
-
     async def _async_create_utility_meters(self) -> None:
         platform = self.platform
         if not platform:
@@ -231,8 +233,24 @@ class SensorProxySensor(SensorEntity):
             meter_types,
         )
 
+        # Verify that our proxy state is actually in the state machine
+        proxy_state = self._hass.states.get(self.entity_id)
+        if not proxy_state or not proxy_state.attributes.get("unit_of_measurement"):
+            _LOGGER.warning(
+                "Proxy %s state not fully available yet (unit=%s), skipping utility meter creation",
+                self.entity_id,
+                (
+                    proxy_state.attributes.get("unit_of_measurement")
+                    if proxy_state
+                    else "no state"
+                ),
+            )
+            return
+
         # Defer default name generation until we have the proxy object id to avoid
-        # duplicating prefixes for glob-created proxies (e.g. avoid 'copy2_copy2_xxx').
+        # duplicating prefixes for glob-created proxies
+        # (e.g. avoid 'sensor.copy_energy_meter_copy_energy_meter_daily' when the desired
+        # name is 'sensor.copy_energy_meter_daily')
         source_state = self._hass.states.get(self._source_entity_id)
         if not source_state:
             _LOGGER.warning(
@@ -245,6 +263,18 @@ class SensorProxySensor(SensorEntity):
         entity_registry = er.async_get(self._hass)
         hass_data = self._hass.data.setdefault(DOMAIN_CONST, {})
         hass_data.setdefault("created_utility_meters", {})
+
+        # Register this parent meter in utility meter component's data structure
+        # This is required for the utility meter sensors to find their parent
+        from homeassistant.components.utility_meter.const import (
+            DATA_TARIFF_SENSORS,
+            DATA_UTILITY,
+        )
+
+        self._hass.data.setdefault(DATA_UTILITY, {})
+        if self.entity_id not in self._hass.data[DATA_UTILITY]:
+            self._hass.data[DATA_UTILITY][self.entity_id] = {}
+        self._hass.data[DATA_UTILITY][self.entity_id][DATA_TARIFF_SENSORS] = []
         base_object_id = (
             self.entity_id.split(".", 1)[1]
             if self.entity_id
@@ -310,6 +340,10 @@ class SensorProxySensor(SensorEntity):
                 meter_unique_id=meter_unique_id,
             )
             meters_to_add.append(utility_meter)
+            # Register the meter in the parent meter's sensor list
+            self._hass.data[DATA_UTILITY][self.entity_id][DATA_TARIFF_SENSORS].append(
+                utility_meter
+            )
             self._created_meter_entities.append((meter_entity_id, meter_unique_id))
             if meter_unique_id:
                 hass_data["created_utility_meters"][meter_unique_id] = meter_entity_id
@@ -335,10 +369,21 @@ class SensorProxySensor(SensorEntity):
     async def _async_cleanup_created_meters(self) -> None:
         if not self._created_meter_entities:
             return
+
         entity_registry = er.async_get(self.hass)
         hass_data = self.hass.data.get(DOMAIN_CONST, {})
         created = hass_data.get("created_utility_meters", {})
         platform = self.platform
+
+        # Clean up utility meter component registration
+        from homeassistant.components.utility_meter.const import DATA_UTILITY
+
+        if (
+            DATA_UTILITY in self.hass.data
+            and self.entity_id in self.hass.data[DATA_UTILITY]
+        ):
+            self.hass.data[DATA_UTILITY].pop(self.entity_id, None)
+
         for entity_id, unique_id in list(self._created_meter_entities):
             _LOGGER.debug(
                 "Cleaning up created utility meter: entity_id=%s unique_id=%s parent=%s",

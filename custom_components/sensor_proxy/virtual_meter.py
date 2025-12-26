@@ -7,7 +7,6 @@ from typing import Any, Tuple
 
 from homeassistant.components.utility_meter import DEFAULT_OFFSET
 from homeassistant.components.utility_meter.sensor import UtilityMeterSensor
-from homeassistant.helpers.entity import async_generate_entity_id
 
 __all__ = [
     "VirtualUtilityMeter",
@@ -65,11 +64,20 @@ def build_virtual_meter_entity(
     meter_name: str,
     meter_unique_id: str | None,
 ) -> Tuple[VirtualUtilityMeter, str]:
-    """Create a configured VirtualUtilityMeter and assign an entity_id."""
+    """Create a configured VirtualUtilityMeter and assign an entity_id.
 
-    desired_object_id = f"{base_object_id}_{meter_type}"
-    meter_entity_id = async_generate_entity_id(
-        "sensor.{}", desired_object_id, hass=hass
+    Following powercalc's pattern: directly build entity_id without async_generate_entity_id.
+    The entity registry will handle conflicts when the entity is added to Home Assistant.
+    """
+
+    # Build the entity_id directly, like powercalc does
+    # This avoids _2 suffix issues caused by async_generate_entity_id checking state machine
+    meter_entity_id = f"sensor.{base_object_id}_{meter_type}"
+
+    _LOGGER.debug(
+        "Building utility meter: entity_id=%s unique_id=%s",
+        meter_entity_id,
+        meter_unique_id,
     )
     # Utility meters must track the proxy entity, not the original source
     params: dict[str, Any] = {
