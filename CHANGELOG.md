@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2025-12-26
+
+- **Critical Fix**: Corrected schema validation error that prevented integration from loading on Home Assistant startup ✅
+- **Fix**: Changed `PLATFORM_SCHEMA` definition from incorrect `.extend().extend()(validator)` pattern to proper `vol.Schema(validate_platform_schema)` wrapper ✅
+- **Impact**: This fixes the "voluptuous.error.MultipleInvalid: expected a dictionary" error that occurred in v1.2.0 ✅
+
 ## 1.2.0 - 2025-12-24
 
 - **Feature**: Added multi-entity compact format for creating multiple related proxies in one configuration block ✅

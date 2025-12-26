@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA as SENSOR_PLATFORM_SCHEMA,
-)
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 
 from .const import (
@@ -72,7 +69,4 @@ def validate_platform_schema(config):
         return vol.Schema(MULTI_ENTITY_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
 
 
-PLATFORM_SCHEMA = SENSOR_PLATFORM_SCHEMA.extend({}, extra=vol.ALLOW_EXTRA)
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({}, extra=vol.ALLOW_EXTRA)(
-    validate_platform_schema
-)
+PLATFORM_SCHEMA = vol.Schema(validate_platform_schema)
