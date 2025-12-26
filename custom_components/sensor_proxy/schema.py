@@ -18,6 +18,7 @@ __all__ = ["PLATFORM_SCHEMA"]
 SENSOR_ITEM_SCHEMA = vol.Schema(
     {
         vol.Required("suffix"): cv.string,
+        vol.Optional("source_entity_id"): cv.entity_id,
         vol.Optional(CONF_NAME): cv.string,
         vol.Optional(CONF_UNIQUE_ID): cv.string,
         vol.Optional(CONF_CREATE_UTILITY_METERS): cv.boolean,
@@ -42,7 +43,7 @@ SINGLE_ENTITY_SCHEMA = {
 # Multi-entity schema (new compact format)
 MULTI_ENTITY_SCHEMA = {
     vol.Required("source_base"): cv.string,
-    vol.Required("name_base"): cv.string,
+    vol.Optional("name_base"): cv.string,
     vol.Optional("unique_id_base"): cv.string,
     vol.Optional("device_id"): cv.string,
     vol.Required("sensors"): vol.All(cv.ensure_list, [SENSOR_ITEM_SCHEMA]),
@@ -64,9 +65,29 @@ def validate_platform_schema(config):
         )
 
     if has_single:
-        return vol.Schema(SINGLE_ENTITY_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
+        validated_config = vol.Schema(SINGLE_ENTITY_SCHEMA, extra=vol.ALLOW_EXTRA)(
+            config
+        )
+        # Require at least name or unique_id for single entity
+        if not validated_config.get(CONF_NAME) and not validated_config.get(
+            CONF_UNIQUE_ID
+        ):
+            raise vol.Invalid(
+                "Must provide at least 'name' or 'unique_id' (preferably both) for single entity configuration"
+            )
+        return validated_config
     else:
-        return vol.Schema(MULTI_ENTITY_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
+        validated_config = vol.Schema(MULTI_ENTITY_SCHEMA, extra=vol.ALLOW_EXTRA)(
+            config
+        )
+        # Require at least name_base or unique_id_base for multi-entity
+        if not validated_config.get("name_base") and not validated_config.get(
+            "unique_id_base"
+        ):
+            raise vol.Invalid(
+                "Must provide at least 'name_base' or 'unique_id_base' (preferably both) for multi-entity configuration"
+            )
+        return validated_config
 
 
 PLATFORM_SCHEMA = vol.Schema(validate_platform_schema)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 from typing import Callable, Iterable, Optional
 
 from homeassistant.components.sensor import (
@@ -215,6 +217,21 @@ class SensorProxySensor(SensorEntity):
             self._copy_source_attributes(source_state)
 
     async def _async_create_utility_meters(self) -> None:
+        # Log thread/task info for debugging duplicate logs
+        thread_id = threading.current_thread().ident
+        task = asyncio.current_task()
+        task_name = task.get_name() if task else "no-task"
+
+        # Extra defensive guard: prevent duplicate execution
+        if self._created_meter_entities:
+            _LOGGER.debug(
+                "Utility meters already created for %s, skipping duplicate call (thread=%s, task=%s)",
+                self.entity_id,
+                thread_id,
+                task_name,
+            )
+            return
+
         platform = self.platform
         if not platform:
             _LOGGER.warning(
@@ -228,9 +245,11 @@ class SensorProxySensor(SensorEntity):
         ).get(CONF_UTILITY_METER_TYPES, DEFAULT_UTILITY_METER_TYPES)
 
         _LOGGER.info(
-            "Attempting to create utility meters for %s with types: %s",
+            "Attempting to create utility meters for %s with types: %s (thread=%s, task=%s)",
             self.entity_id,
             meter_types,
+            thread_id,
+            task_name,
         )
 
         # Verify that our proxy state is actually in the state machine
@@ -353,7 +372,7 @@ class SensorProxySensor(SensorEntity):
 
             # Debug: list created meters with key details
             _LOGGER.debug(
-                "Created %d utility meter(s) for %s: %s",
+                "Created %d utility meter(s) for %s: %s (thread=%s, task=%s)",
                 len(meters_to_add),
                 self.entity_id,
                 [
@@ -364,6 +383,8 @@ class SensorProxySensor(SensorEntity):
                     }
                     for m in meters_to_add
                 ],
+                thread_id,
+                task_name,
             )
 
     async def _async_cleanup_created_meters(self) -> None:

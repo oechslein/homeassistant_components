@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.4 - 2025-12-26
+
+- **Enhancement**: Added schema validation requiring at least one of `name` or `unique_id` for single entity configurations ✅
+- **Enhancement**: Added schema validation requiring at least one of `name_base` or `unique_id_base` for multi-entity configurations ✅
+- **Improvement**: Both formats now consistent - requiring at least one identifier while keeping both optional for maximum flexibility ✅
+- **Impact**: Prevents creation of entities without proper identification, ensuring all entities have sensible names or unique IDs ✅
+
 ## 1.2.3 - 2025-12-26
 
 - **Fix**: Eliminated utility meter `_2` suffix issue by directly building entity_id instead of using `async_generate_entity_id()` ✅

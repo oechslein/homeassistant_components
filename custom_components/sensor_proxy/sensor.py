@@ -47,18 +47,25 @@ async def async_setup_platform(
     elif "source_base" in config:
         # Multi-entity configuration (new compact format)
         source_base = config["source_base"]
-        name_base = config["name_base"]
+        name_base = config.get("name_base")
         unique_id_base = config.get("unique_id_base")
         sensors_list = config["sensors"]
 
         for sensor_config in sensors_list:
             suffix = sensor_config["suffix"]
 
-            # Build source_entity_id from base + suffix
-            source_entity_id = f"{source_base}_{suffix}"
+            # Use explicit source_entity_id if provided, otherwise build from base + suffix
+            source_entity_id = sensor_config.get(
+                "source_entity_id", f"{source_base}_{suffix}"
+            )
 
-            # Use per-sensor name if provided, otherwise generate from name_base
-            name = sensor_config.get(CONF_NAME) or f"{name_base}_{suffix}"
+            # Use per-sensor name if provided, otherwise generate from name_base if available
+            if CONF_NAME in sensor_config:
+                name = sensor_config[CONF_NAME]
+            elif name_base:
+                name = f"{name_base}_{suffix}"
+            else:
+                name = None
 
             # Use per-sensor unique_id if provided, otherwise generate from unique_id_base
             if CONF_UNIQUE_ID in sensor_config:
